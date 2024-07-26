@@ -1,0 +1,29 @@
+<?xml version="1.0" ?>
+<module name="SayHello" version="1.0">
+ 
+  <description>Descripteur du module SayHello</description>
+ 
+  <variables>
+    <variable 
+      field-name="loop_sum"
+      name="LoopSum"
+      data-type="integer"
+      item-kind="none"
+      dim="0" />
+  </variables>
+ 
+  <entry-points>
+    <entry-point method-name="startInit" name="StartInit" where="start-init" property="none" />
+    <entry-point method-name="compute" name="Compute" where="compute-loop" property="none" />
+    <entry-point method-name="endModule" name="EndModule" where="exit" property="none" />
+  </entry-points>
+ 
+  <options>
+    <simple name="nb-sds" type="integer" default="100" />
+    <simple name="nb-blocs" type="integer" default="20" />
+    <simple name="nb-cells" type="integer" default="30" />
+    <simple name="nb-nodes" type="integer" default="100" />
+    <simple name="nb-values" type="integer" default="100" />
+  </options>
+ 
+</module>
