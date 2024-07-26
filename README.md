@@ -13,6 +13,7 @@ biarc
 cdw
 git clone https://github.com/AlexlHer/arcane_sandbox
 initap arcane_sandbox D
+configap
 ninja
 
 ${AP_BUILD_DIR}/template/HelloWorld -A,MaxIteration=1 ${AP_SOURCE_DIR}/template/HelloWorld.arc

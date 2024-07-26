@@ -21,14 +21,13 @@ void SayHelloModule::
 buildModule()
 {
   Connectivity c(mesh()->connectivity());
-  c.enableConnectivity(Connectivity::CT_HasEdge);
+  c.enableConnectivity(Connectivity::CT_HasEdge + Connectivity::CT_FaceToEdge + Connectivity::CT_CellToEdge);
 }
 
 void SayHelloModule::
 startInit()
 {
   info() << "Module SayHello INIT";
-
 }
 
 void SayHelloModule::
