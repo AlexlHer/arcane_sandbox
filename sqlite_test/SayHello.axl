@@ -1,0 +1,22 @@
+<?xml version="1.0" ?>
+<module name="SayHello" version="1.0">
+ 
+  <description>Descripteur du module SayHello</description>
+ 
+  <variables>
+
+  </variables>
+ 
+  <entry-points>
+    <entry-point method-name="startInit" name="StartInit" where="start-init" property="none" />
+    <entry-point method-name="createTable" name="CreateTable" where="start-init" property="none" />
+    <entry-point method-name="compute" name="Compute" where="compute-loop" property="none" />
+    <entry-point method-name="printResults" name="PrintResults" where="exit" property="none" />
+    <entry-point method-name="endModule" name="EndModule" where="exit" property="none" />
+  </entry-points>
+ 
+  <options>
+
+  </options>
+ 
+</module>
