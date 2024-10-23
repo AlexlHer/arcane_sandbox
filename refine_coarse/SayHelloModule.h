@@ -4,6 +4,7 @@
  
 #include <arcane/ITimeLoopMng.h>
 #include <arcane/cartesianmesh/ICartesianMesh.h>
+#include "arcane/core/IPostProcessorWriter.h"
 
 #include "SayHello_axl.h"
 
@@ -23,6 +24,7 @@ class SayHelloModule
   VersionInfo versionInfo() const override { return VersionInfo(1, 0, 0); }
 
   ICartesianMesh* m_cartesian_mesh;
+  IItemFamily* m_particle_family;
 };
  
 #endif

@@ -4,7 +4,33 @@
   <description>Descripteur du module SayHello</description>
  
   <variables>
+    <variable
+        field-name="particle_coord"
+        name="ParticleCoord"
+        family-name="ArcaneParticles"
+        data-type="real3"
+        item-kind="particle"
+        dim="0"
+        dump="true"
+        need-sync="true" />
 
+    <variable
+        field-name="cell_center_coord"
+        name="CellCenterCoord"
+        data-type="real3"
+        item-kind="cell"
+        dim="0"
+        dump="true"
+        need-sync="true" />
+
+    <variable
+        field-name="hash"
+        name="Hash"
+        data-type="string"
+        item-kind="none"
+        dim="0"
+        dump="true"
+        need-sync="true" />
   </variables>
  
   <entry-points>
@@ -14,6 +40,10 @@
   </entry-points>
  
   <options>
+    <service-instance name    = "format"
+                      type    = "Arcane::IPostProcessorWriter"
+                      default = "Ensight7PostProcessor"
+    />
 
   </options>
  
