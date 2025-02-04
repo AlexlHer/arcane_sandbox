@@ -1,0 +1,28 @@
+<?xml version="1.0" ?>
+<module name="SayHello" version="1.0">
+ 
+  <description>Descripteur du module SayHello</description>
+ 
+  <variables>
+
+  </variables>
+ 
+  <entry-points>
+    <entry-point method-name="init" name="Init" where="init" property="none" />
+    <entry-point method-name="compute" name="Compute" where="compute-loop" property="none" />
+    <entry-point method-name="endModule" name="EndModule" where="exit" property="none" />
+  </entry-points>
+ 
+  <options>
+    <simple name="test-option" type="integer"/>
+    <enumeration name="boundary-condition" type="eBoundaryCondition" default="X">
+      <description>Type de condition aux limites</description>
+      <enumvalue name="X" genvalue="VelocityX" />
+      <enumvalue name="Y" genvalue="VelocityY"  />
+      <enumvalue name="Z" genvalue="VelocityZ"  />
+    </enumeration>
+    <service-instance name="pdes-random-number-generator" type="Arcane::IRandomNumberGenerator" mesh-name="Mesh1">
+    </service-instance>
+  </options>
+ 
+</module>
