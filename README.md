@@ -19,4 +19,5 @@ ninja
 ${AP_BUILD_DIR}/template/HelloWorld -A,MaxIteration=1 ${AP_SOURCE_DIR}/template/HelloWorld.arc
 ${AP_BUILD_DIR}/runcommand/RunCommand -A,MaxIteration=1 ${AP_SOURCE_DIR}/runcommand/HelloWorld.arc
 ${AP_BUILD_DIR}/itemdirectionmng/ItemDirectionMng -A,MaxIteration=1 ${AP_SOURCE_DIR}/itemdirectionmng/HelloWorld.arc
+mpirun -n 8 ${AP_BUILD_DIR}/dof_test/DoFTest -A,MaxIteration=10 ${AP_SOURCE_DIR}/dof_test/HelloWorld.arc
 ```
