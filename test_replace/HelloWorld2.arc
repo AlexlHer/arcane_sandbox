@@ -26,7 +26,7 @@
 ./test_replace/TestReplace \
 -A,arcane-checkpoint/checkpoint-service/@name=ArcaneBasic2CheckpointWriter \
 -A,arcane-checkpoint/do-dump-at-end=true \
--A,say-hello/test-option=1 \
+-A,say-hello/test-option="1 1" \
 -A,say-hello/boundary-condition=Y \
 -A,say-hello/pdes-random-number-generator/@name=PDESRandomNumberGenerator \
 -A,say-hello/pdes-random-number-generator/@mesh-name=Mesh0 \

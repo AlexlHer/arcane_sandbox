@@ -2,9 +2,7 @@
 
 #include "SayHelloModule.h"
 #include "arcane/cartesianmesh/CartesianMeshUtils.h"
-#include "arcane/cartesianmesh/CartesianMeshCoarsening2.h"
 #include "arcane/cartesianmesh/CartesianMeshPatchListView.h"
-#include "arcane/cartesianmesh/CartesianMeshRenumberingInfo.h"
 #include "arcane/core/IMesh.h"
 #include "arcane/core/IItemFamily.h"
 #include <arcane/core/IParticleFamily.h>
@@ -28,16 +26,6 @@ init()
     m_cartesian_mesh->computeDirections(); // A ne pas appeler avant recreateFromDump().
 
     {
-      Ref<CartesianMeshCoarsening2> coarser = CartesianMeshUtils::createCartesianMeshCoarsening2(m_cartesian_mesh);
-      coarser->createCoarseCells();
-
-
-      m_cartesian_mesh->computeDirections();
-      CartesianMeshRenumberingInfo renumbering_info;
-      renumbering_info.setRenumberPatchMethod(1);
-      renumbering_info.setSortAfterRenumbering(true);
-      renumbering_info.setParentPatch(m_cartesian_mesh->amrPatch(1));
-      m_cartesian_mesh->renumberItemsUniqueId(renumbering_info);
 
       {
         CartesianMeshPatchListView patches = m_cartesian_mesh->patches();
@@ -51,17 +39,26 @@ init()
         }
       }
 
-      for(Integer i = 2; i <= 26; i += 8) {
-        for(Integer j = 2; j <= 26; j += 8) {
-          m_cartesian_mesh->coarseZone2D({i, j}, {2.0, 2.0});
-        }
-      }
-      for(Integer i = 6; i <= 22; i += 8) {
-        for(Integer j = 6; j <= 22; j += 8) {
-          m_cartesian_mesh->refinePatch2D({i, j}, {2.0, 2.0});
-        }
-      }
+      m_cartesian_mesh->refinePatch({{2.0, 2.0},{3.0, 2.0}});
+      m_cartesian_mesh->refinePatch({{3.0, 4.0},{4.0, 2.0}});
+      m_cartesian_mesh->refinePatch({{3.5, 3.5},{1.0, 1.5}});
       m_cartesian_mesh->computeDirections();
+
+      Ref<ICartesianMeshAMRPatchMng> coarser = CartesianMeshUtils::cartesianMeshAMRPatchMng(m_cartesian_mesh);
+      coarser->createSubLevel();
+      m_cartesian_mesh->computeDirections();
+
+      m_cartesian_mesh->coarseZone({{0.0, 6.0},{2.0, 2.0}});
+      m_cartesian_mesh->coarseZone({{5.0, 5.0},{1.0, 1.0}});
+      m_cartesian_mesh->coarseZone({{2.0, 2.0},{1.0, 1.0}});
+      m_cartesian_mesh->computeDirections();
+
+
+      // for(Integer i = 2; i <= 26; i += 8) {
+      //   for(Integer j = 2; j <= 26; j += 8) {
+      //     m_cartesian_mesh->coarseZone({{ i, j }, { 2.0, 2.0 }});
+      //   }
+      // }
 
       {
         CartesianMeshPatchListView patches = m_cartesian_mesh->patches();

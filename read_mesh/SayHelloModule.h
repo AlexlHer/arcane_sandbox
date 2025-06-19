@@ -3,15 +3,8 @@
 #define SAYHELLOMODULE_H
  
 #include <arcane/core/ITimeLoopMng.h>
-#include <arcane/cartesianmesh/ICartesianMesh.h>
-
-enum eBoundaryCondition { VelocityX, VelocityY, VelocityZ };
-
-#include <arcane/core/IRandomNumberGenerator.h>
-#include <arcane/utils/Real2.h>
-
 #include "SayHello_axl.h"
-
+ 
 using namespace Arcane;
  
 class SayHelloModule
@@ -19,15 +12,14 @@ class SayHelloModule
 {
  public:
   explicit SayHelloModule(const ModuleBuildInfo& mbi) 
-  : ArcaneSayHelloObject(mbi), m_cartesian_mesh(nullptr) { }
+  : ArcaneSayHelloObject(mbi) { }
  
  public:
-  void init() override;
+  void buildModule() override;
+  void startInit() override;
   void compute() override;
   void endModule() override;
   VersionInfo versionInfo() const override { return VersionInfo(1, 0, 0); }
-
-  ICartesianMesh* m_cartesian_mesh;
 };
  
 #endif

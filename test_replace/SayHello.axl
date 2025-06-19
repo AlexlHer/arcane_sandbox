@@ -14,7 +14,7 @@
   </entry-points>
  
   <options>
-    <simple name="test-option" type="integer"/>
+    <simple name="test-option" type="real2"/>
     <enumeration name="boundary-condition" type="eBoundaryCondition" default="X">
       <description>Type de condition aux limites</description>
       <enumvalue name="X" genvalue="VelocityX" />

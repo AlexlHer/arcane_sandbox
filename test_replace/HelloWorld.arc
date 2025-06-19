@@ -37,7 +37,7 @@
 -A,test3=PDESRandomNumberGenerator \
 -A,test4=678 \
 -A,test6=ArcaneBasic2CheckpointWriter \
--A,say-hello/test-option=@test4@ \
+-A,say-hello/test-option="@test4@ 2.3" \
 -A,say-hello/pdes-random-number-generator/@mesh-name=Mesh0 \
 ${AP_SOURCE_DIR}/test_replace/HelloWorld.arc
 -->
