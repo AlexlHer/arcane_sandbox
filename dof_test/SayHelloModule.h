@@ -31,7 +31,7 @@ class SayHelloModule
 
  private:
 
-  Ref<VariableDoFArrayReal> m_var_test;
+  Ref<VariableDoFArrayReal3x3> m_var_test;
   Ref<IIndexedIncrementalItemConnectivity> m_cell_to_dof;
   Integer m_nb_dof_per_cell;
   Integer m_var_dim2;

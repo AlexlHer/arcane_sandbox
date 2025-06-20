@@ -71,13 +71,13 @@ startInit()
   dof_family_interface->computeSynchronizeInfos();
 
   // Création de la variable.
-  m_var_test = makeRef(new VariableDoFArrayReal(VariableBuildInfo(mesh(), "TestVar", "DoFFamily")));
+  m_var_test = makeRef(new VariableDoFArrayReal3x3(VariableBuildInfo(mesh(), "TestVar", "DoFFamily")));
 
   // On redimensionne la seconde dimension.
   m_var_test->resize(m_var_dim2);
 
   // On remplit le tableau 2D de "123".
-  m_var_test->fill(123.);
+  m_var_test->fill({{0, 1, 2}, {3, 4, 5}, {6, 123., 8}});
 
   // On explore chaque DoF.
   ENUMERATE_ (DoF, idof, dof_family_interface->allItems()) {
@@ -87,12 +87,12 @@ startInit()
     }
 
     for (Integer i = 0; i < m_var_dim2; ++i) {
-      if ((*m_var_test.get())(idof, i) != 123.) {
+      if ((*m_var_test.get())(idof, i)[2][1] != 123.) {
         ARCANE_FATAL("Bad value 4");
       }
 
       // On met une valeur dans chaque case de la variable 2D.
-      (*m_var_test.get())(idof, i) = static_cast<Real>(idof->uniqueId().asInt64()+i);
+      (*m_var_test.get())(idof, i)[2][1] = static_cast<Real>(idof->uniqueId().asInt64()+i);
     }
   }
   m_var_test->synchronize();
@@ -147,11 +147,11 @@ computeOdd()
 
     for (Integer i = 0; i < m_var_dim2; ++i) {
 
-      if ((*m_var_test.get())(idof, i) != static_cast<Real>(idof->owner())) {
+      if ((*m_var_test.get())(idof, i)[2][1] != static_cast<Real>(idof->owner())) {
         ARCANE_FATAL("Bad value 3");
       }
 
-      (*m_var_test.get())(idof, i) = static_cast<Real>(idof->uniqueId().asInt64() + i);
+      (*m_var_test.get())(idof, i)[2][1] = static_cast<Real>(idof->uniqueId().asInt64() + i);
     }
   }
 
@@ -193,11 +193,11 @@ computeEven()
     }
     for (Integer i = 0; i < m_var_dim2; ++i) {
 
-      if ((*m_var_test.get())(idof, i) != static_cast<Real>(idof->uniqueId().asInt64() + i)) {
+      if ((*m_var_test.get())(idof, i)[2][1] != static_cast<Real>(idof->uniqueId().asInt64() + i)) {
         ARCANE_FATAL("Bad value 1");
       }
 
-      (*m_var_test.get())(idof, i) = static_cast<Real>(pm->commRank());
+      (*m_var_test.get())(idof, i)[2][1] = static_cast<Real>(pm->commRank());
     }
   }
 
@@ -206,7 +206,7 @@ computeEven()
   ENUMERATE_ (Cell, icell, allCells()) {
     for (ItemLocalId dof : m_cell_to_dof->view().items(icell)) {
       for (Integer i = 0; i < m_var_dim2; ++i) {
-        if ((*m_var_test.get())(DoFLocalId(dof), i) != static_cast<Real>(icell->owner())) {
+        if ((*m_var_test.get())(DoFLocalId(dof), i)[2][1] != static_cast<Real>(icell->owner())) {
           ARCANE_FATAL("Bad value 2");
         }
       }
