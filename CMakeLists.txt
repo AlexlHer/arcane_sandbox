@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(HelloWorld LANGUAGES CXX C)
+project(ArcaneSandbox LANGUAGES CXX C)
 
 add_subdirectory(template)
 #add_subdirectory(itemdirectionmng)
@@ -11,4 +11,5 @@ add_subdirectory(template)
 #add_subdirectory(test_replace)
 #add_subdirectory(dof_test)
 #add_subdirectory(amr_test)
-add_subdirectory(shared_memory)
+#add_subdirectory(shared_memory)
+add_subdirectory(amr_proto)
