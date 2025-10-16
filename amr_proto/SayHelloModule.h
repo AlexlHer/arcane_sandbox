@@ -8,33 +8,43 @@
 
 #include "SayHello_axl.h"
 
+#include <arcane/cartesianmesh/ICartesianMeshNumberingMng.h>
 
+struct LevelPatches;
 using namespace Arcane;
 
 class SayHelloModule
 : public ArcaneSayHelloObject
 {
-public:
+ public:
 
   explicit SayHelloModule(const ModuleBuildInfo& mbi)
-    : ArcaneSayHelloObject(mbi)
+  : ArcaneSayHelloObject(mbi)
   {
   }
 
-public:
+ public:
 
   void startInit() override;
   void compute() override;
-  void computeVelocity(Real time);
   void endModule() override;
   VersionInfo versionInfo() const override { return VersionInfo(1, 0, 0); }
 
-private:
+ public:
+
+  void computeVelocity(Real time);
+  void computePhi();
+  void markCellsToRefine();
+  void refine();
+  void propage(Integer level, LevelPatches* all_patches);
+
+ private:
 
   Real3 m_global_length;
   Real3 m_origin;
-  Int64x3 m_nb_cells;
+  Int32x3 m_nb_cells;
   ICartesianMesh* m_cartesian_mesh;
+  Ref<ICartesianMeshNumberingMng> m_numbering;
   Real3 m_cell_size;
 };
 
