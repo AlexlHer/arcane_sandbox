@@ -5,6 +5,7 @@
 #include <arcane/core/ITimeLoopMng.h>
 #include <arcane/cartesianmesh/ICartesianMesh.h>
 #include <arcane/utils/Vector3.h>
+#include "arcane/core/IPostProcessorWriter.h"
 
 #include "SayHello_axl.h"
 
@@ -32,11 +33,12 @@ class SayHelloModule
 
  public:
 
-  void computeVelocity(Real time);
-  void computePhi();
-  void markCellsToRefine();
-  void refine();
-  void propage(Integer level, LevelPatches* all_patches);
+  void syncUp(Integer level_down, VariableCellReal& var);
+  void syncDown(Integer level_down, VariableCellReal& var);
+  void computeVelocity(Real time, CartesianPatch& patch);
+  void computePhi(CartesianPatch& patch);
+  void testMarkCellsToRefine();
+  bool markCellsToRefine(Integer max_level);
 
  private:
 
@@ -46,6 +48,7 @@ class SayHelloModule
   ICartesianMesh* m_cartesian_mesh;
   Ref<ICartesianMeshNumberingMng> m_numbering;
   Real3 m_cell_size;
+  UniqueArray<Real> times;
 };
 
 #endif

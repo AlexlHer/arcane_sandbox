@@ -38,6 +38,14 @@
     <simple name="n-steps" type="integer" default="10000">
       <description>Nombre de boucles à effectuer.</description>
     </simple>
+    <service-instance name = "post-processor"
+                      type = "Arcane::IPostProcessorWriter"
+                      default = "Ensight7PostProcessor"
+    >
+      <description>
+        Indique le type de bibliothèque à utiliser pour les sorties de dépouillement.
+      </description>
+    </service-instance>
   </options>
 
 </module>
