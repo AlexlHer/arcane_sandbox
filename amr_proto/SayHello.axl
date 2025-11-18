@@ -25,6 +25,27 @@
         item-kind="face"
         dim="0"
     />
+    <variable
+        field-name="inout"
+        name="Inout"
+        data-type="integer"
+        item-kind="cell"
+        dim="0"
+    />
+    <variable
+        field-name="uidcells"
+        name="Uidcells"
+        data-type="int64"
+        item-kind="cell"
+        dim="0"
+    />
+    <variable
+        field-name="indexpatch"
+        name="Indexpatch"
+        data-type="integer"
+        item-kind="cell"
+        dim="0"
+    />
 
   </variables>
 

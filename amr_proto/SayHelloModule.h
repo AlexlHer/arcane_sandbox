@@ -35,8 +35,9 @@ class SayHelloModule
 
   void syncUp(Integer level_down, VariableCellReal& var);
   void syncDown(Integer level_down, VariableCellReal& var);
-  void computeVelocity(Real time, CartesianPatch& patch);
-  void computePhi(CartesianPatch& patch);
+  void computePsi(Real time, CartesianPatch& patch);
+  void computeVelocity(CartesianPatch& patch);
+  void computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp);
   void testMarkCellsToRefine();
   bool markCellsToRefine(Integer max_level);
 

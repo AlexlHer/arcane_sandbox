@@ -93,29 +93,50 @@ compute()
 
   m_cartesian_mesh->computeDirections();
 
-  for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
-    auto patch = m_cartesian_mesh->amrPatch(p);
-    if (patch.level() == 0) {
-      computeVelocity(m_global_time(), patch);
-      computePhi(patch);
+  m_inout.fill(0);
+  m_indexpatch.fill(0);
+  m_velocity.fill(0);
+  m_psi.fill(0);
+
+  // Level 0
+  {
+    VariableCellReal phi_tmp = VariableBuildInfo(mesh(), "Phi_tmp");
+    phi_tmp.copy(m_phi);
+    for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
+      auto patch = m_cartesian_mesh->amrPatch(p);
+      if (patch.level() == 0) {
+        computePsi(m_global_time(), patch);
+        computeVelocity(patch);
+        computePhi(patch, phi_tmp);
+      }
     }
   }
 
 
 
-  for (Integer i = 0; i < 1; ++i) {
-    if (markCellsToRefine(i)) {
+  // Level l
+  for (Integer l = 0; l < 2; ++l) {
+    if (markCellsToRefine(l)) {
       info() << "NbPatches before refine : " << m_cartesian_mesh->nbPatch();
       m_cartesian_mesh->refine();
       info() << "NbPatches after refine : " << m_cartesian_mesh->nbPatch();
-      syncUp(i, m_phi);
+      syncUp(l, m_phi);
+
+      VariableCellReal phi_tmp = VariableBuildInfo(mesh(), "Phi_tmp");
+      phi_tmp.copy(m_phi);
 
       for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
         auto patch = m_cartesian_mesh->amrPatch(p);
-        if (patch.level() == i+1) {
-          info() << "computeVelocity() with patch : " << p << " -- level : " << i+1;
-          computeVelocity(m_global_time(), patch);
-          computePhi(patch);
+        if (patch.level() == l+1) {
+          computePsi(m_global_time(), patch);
+        }
+      }
+      for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
+        auto patch = m_cartesian_mesh->amrPatch(p);
+        if (patch.level() == l+1) {
+          info() << "computeVelocity() with patch : " << p << " -- level : " << l+1 << " -- index : " << patch.index();
+          computeVelocity(patch);
+          computePhi(patch, phi_tmp);
         }
         else {
           info() << "Found patch with level : " << patch.level();
@@ -123,6 +144,18 @@ compute()
       }
     }
   }
+
+  // info() << "FaceUID;Cell0;Cell1;Velocity;";
+  //
+  // ENUMERATE_(Face, iface, allFaces())
+  // {
+  //   info() << iface->uniqueId() << ";" << iface->cell(0).uniqueId() << ";" << (iface->nbCell() == 2 ? iface->cell(1).uniqueId() : -1l) << ";" << m_velocity[iface] << ";";
+  // }
+  // info() << "CellUID;Psi;Phi;";
+  // ENUMERATE_(Cell, icell, allCells())
+  // {
+  //   info() << icell->uniqueId() << ";" << m_psi[icell] << ";" << m_phi[icell] << ";";
+  // }
 
   //
   // m_cartesian_mesh->refine();
@@ -193,15 +226,9 @@ syncDown(Integer level_down, VariableCellReal& var)
 /*---------------------------------------------------------------------------*/
 
 void SayHelloModule::
-computeVelocity(Real time, CartesianPatch& patch)
+computePsi(Real time, CartesianPatch& patch)
 {
   constexpr Real PI = 3.1415926535897932384626;
-
-  FaceDirectionMng fdm_x{ patch.faceDirection(MD_DirX) };
-  FaceDirectionMng fdm_y{ patch.faceDirection(MD_DirY) };
-
-  CellDirectionMng cdm_x{ patch.cellDirection(MD_DirX) };
-  CellDirectionMng cdm_y{ patch.cellDirection(MD_DirY) };
 
   VariableNodeReal3 node_coords = mesh()->nodesCoordinates();
 
@@ -213,14 +240,45 @@ computeVelocity(Real time, CartesianPatch& patch)
     Real3 center = n0_coord + ((n1_coord - n0_coord) / 2);
 
     m_psi[icell] = std::pow(std::sin(PI * center.x), 2) * std::pow(std::sin(PI * center.y), 2) * std::cos(PI * time / 2.0) * 1.0 / PI;
+
+    if (icell->uniqueId() == 3487) {
+      info() << "m_psi[3487] : " << m_psi[icell];
+    }
   }
 
   m_psi.synchronize();
+}
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+void SayHelloModule::
+computeVelocity(CartesianPatch& patch)
+{
+  FaceDirectionMng fdm_x{ patch.faceDirection(MD_DirX) };
+  FaceDirectionMng fdm_y{ patch.faceDirection(MD_DirY) };
+
+  CellDirectionMng cdm_x{ patch.cellDirection(MD_DirX) };
+  CellDirectionMng cdm_y{ patch.cellDirection(MD_DirY) };
+
 
   // // Utiliser ARCANE_DATA_INIT_POLICY=DEFAULT
   // ENUMERATE_ (Face, iface, patch.cells().faceGroup()){
   //   m_velocity[iface] = 0;
   // }
+
+  ENUMERATE_ (Cell, icell, patch.cells()){
+    m_inout[icell] = 0;
+    m_uidcells[icell] = icell->uniqueId();
+    m_indexpatch[icell] = patch.index();
+  }
+
+  ENUMERATE_ (Cell, icell, cdm_x.innerCells()) {
+    m_inout[icell] += 1;
+  }
+  ENUMERATE_ (Cell, icell, cdm_y.innerCells()) {
+    m_inout[icell] += 1;
+  }
 
   {
     /*
@@ -236,25 +294,91 @@ computeVelocity(Real time, CartesianPatch& patch)
       DirFace cells_of_face(fdm_x[iface]);
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
-      // info() << "Cell prev UID : " << prev.uniqueId();
-      // info() << "Cell next UID : " << next.uniqueId();
+
+      // if (prev.uniqueId() == 3417 && next.uniqueId() == 3418) {
+      //   info() << "3417 3418 : " << iface->uniqueId();
+      // }
+
       // TODO Normalement, en innerFaces, pas besoin.
       if (prev.null() || next.null())
         continue;
 
-      DirCell dir_y_prev_cell(cdm_y[prev]);
-      Cell c00 = dir_y_prev_cell.previous();
-      Cell c01 = dir_y_prev_cell.next();
-      if (c00.null() || c01.null())
-        continue;
+      Cell c00;
+      Cell c01;
+      Cell c10;
+      Cell c11;
 
-      DirCell dir_y_next_cell(cdm_y[next]);
-      Cell c10 = dir_y_next_cell.previous();
-      Cell c11 = dir_y_next_cell.next();
-      if (c10.null() || c11.null())
-        continue;
+      auto flemme = [&](Integer i) {
+        if (iface->uniqueId() == 7371) {
+          info() << i << " c00 : " << c00.null() << " -- c01 : " << c01.null() << " -- cells_of_face.isPreviousCellOwn() : " << cells_of_face.isPreviousCellOwn();
+          info() << i << " c10 : " << c10.null() << " -- c11 : " << c11.null() << " -- cells_of_face.isNextCellOwn() : " << cells_of_face.isNextCellOwn();
+        }
+      };
+
+      // Si next n'est pas dans notre patch, il faut passer par prev+c00 pour
+      // avoir c10 et prev+c01 pour avoir c11.
+      // TODO : Trouver une solution viable à mettre dans Arcane !
+      if (!cells_of_face.isNextCellOwn()) {
+        if (!cells_of_face.isPreviousCellOwn()) {
+          ARCANE_FATAL("Impossible");
+        }
+        DirCell dir_y_prev_cell(cdm_y[prev]);
+        c00 = dir_y_prev_cell.previous();
+        c01 = dir_y_prev_cell.next();
+        if (c00.null() || c01.null())
+          continue;
+        flemme(0);
+
+        DirCell dir_y_c00_cell(cdm_y[c00]);
+        c10 = dir_y_c00_cell.next();
+        DirCell dir_y_c01_cell(cdm_y[c01]);
+        c11 = dir_y_c01_cell.next();
+        if (c10.null() || c11.null())
+          continue;
+      }
+      // Si prev n'est pas dans notre patch, il faut passer par next+c10 pour
+      // avoir c00 et next+c11 pour avoir c01.
+      else if (!cells_of_face.isPreviousCellOwn()) {
+        if (!cells_of_face.isNextCellOwn()) {
+          ARCANE_FATAL("Impossible");
+        }
+        DirCell dir_y_next_cell(cdm_y[next]);
+        c10 = dir_y_next_cell.previous();
+        c11 = dir_y_next_cell.next();
+        if (c10.null() || c11.null())
+          continue;
+        flemme(1);
+
+        DirCell dir_y_c10_cell(cdm_y[c10]);
+        c00 = dir_y_c10_cell.previous();
+        DirCell dir_y_c11_cell(cdm_y[c11]);
+        c01 = dir_y_c11_cell.previous();
+        flemme(5);
+        if (c00.null() || c01.null())
+          continue;
+      }
+      else {
+        DirCell dir_y_prev_cell(cdm_y[prev]);
+        c00 = dir_y_prev_cell.previous();
+        c01 = dir_y_prev_cell.next();
+        if (c00.null() || c01.null())
+          continue;
+        flemme(2);
+        DirCell dir_y_next_cell(cdm_y[next]);
+        c10 = dir_y_next_cell.previous();
+        c11 = dir_y_next_cell.next();
+        flemme(4);
+        if (c10.null() || c11.null())
+          continue;
+      }
+
+      flemme(3);
 
       m_velocity[iface] = -((m_psi[c11] + m_psi[c01]) - (m_psi[c10] + m_psi[c00])) * (0.25 / m_cell_size.y);
+
+      if (iface->uniqueId() == 7371) {
+        info() << "X 7371 " << m_velocity[iface];
+      }
     }
 
     /*
@@ -268,21 +392,71 @@ computeVelocity(Real time, CartesianPatch& patch)
       DirFace cells_of_face(fdm_y[iface]);
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
+      // info() << "---";
+      // info() << "Face UID : " << iface->uniqueId();
+      // info() << "Cell prev UID : " << prev.uniqueId();
+      // info() << "Cell next UID : " << next.uniqueId();
+      // info() << "---";
       // TODO Normalement, en innerFaces, pas besoin.
       if (prev.null() || next.null())
         continue;
 
-      DirCell dir_x_prev_cell(cdm_x[prev]);
-      Cell c00 = dir_x_prev_cell.previous();
-      Cell c10 = dir_x_prev_cell.next();
-      if (c00.null() || c10.null())
-        continue;
+      Cell c00;
+      Cell c01;
+      Cell c10;
+      Cell c11;
 
-      DirCell dir_x_next_cell(cdm_x[next]);
-      Cell c01 = dir_x_next_cell.previous();
-      Cell c11 = dir_x_next_cell.next();
-      if (c01.null() || c11.null())
-        continue;
+      // Si next n'est pas dans notre patch, il faut passer par prev+c00 pour
+      // avoir c01 et prev+c10 pour avoir c11.
+      // TODO : Trouver une solution viable à mettre dans Arcane !
+      if (!cells_of_face.isNextCellOwn()) {
+        if (!cells_of_face.isPreviousCellOwn()) {
+          ARCANE_FATAL("Impossible");
+        }
+        DirCell dir_x_prev_cell(cdm_x[prev]);
+        c00 = dir_x_prev_cell.previous();
+        c10 = dir_x_prev_cell.next();
+        if (c00.null() || c10.null())
+          continue;
+
+        DirCell dir_x_c00_cell(cdm_x[c00]);
+        c01 = dir_x_c00_cell.next();
+        DirCell dir_x_c10_cell(cdm_x[c10]);
+        c11 = dir_x_c10_cell.next();
+        if (c01.null() || c11.null())
+          continue;
+      }
+      // Si prev n'est pas dans notre patch, il faut passer par next+c01 pour
+      // avoir c00 et next+c11 pour avoir c10.
+      else if (!cells_of_face.isPreviousCellOwn()) {
+        if (!cells_of_face.isNextCellOwn()) {
+          ARCANE_FATAL("Impossible");
+        }
+        DirCell dir_x_next_cell(cdm_x[next]);
+        c01 = dir_x_next_cell.previous();
+        c11 = dir_x_next_cell.next();
+        if (c01.null() || c11.null())
+          continue;
+
+        DirCell dir_x_c01_cell(cdm_x[c01]);
+        c00 = dir_x_c01_cell.previous();
+        DirCell dir_x_c11_cell(cdm_x[c11]);
+        c10 = dir_x_c11_cell.previous();
+        if (c00.null() || c10.null())
+          continue;
+      }
+      else {
+        DirCell dir_x_prev_cell(cdm_x[prev]);
+        c00 = dir_x_prev_cell.previous();
+        c10 = dir_x_prev_cell.next();
+        if (c00.null() || c10.null())
+          continue;
+        DirCell dir_x_next_cell(cdm_x[next]);
+        c01 = dir_x_next_cell.previous();
+        c11 = dir_x_next_cell.next();
+        if (c01.null() || c11.null())
+          continue;
+      }
 
       m_velocity[iface] = ((m_psi[c11] + m_psi[c10]) - (m_psi[c01] + m_psi[c00])) * (0.25 / m_cell_size.x);
     }
@@ -294,7 +468,7 @@ computeVelocity(Real time, CartesianPatch& patch)
 /*---------------------------------------------------------------------------*/
 
 void SayHelloModule::
-computePhi(CartesianPatch& patch)
+computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
 {
   Real dtdx = m_global_deltat() / m_cell_size.x;
   Real dtdy = m_global_deltat() / m_cell_size.y;
@@ -309,9 +483,6 @@ computePhi(CartesianPatch& patch)
 
   VariableFaceReal phixy = VariableBuildInfo(mesh(), "Phixy");
 
-  VariableCellReal phi = VariableBuildInfo(mesh(), "Phi");
-  phi.copy(m_phi);
-
   {
     VariableCellReal slope2 = VariableBuildInfo(mesh(), "Slope2");
     VariableCellReal slope4 = VariableBuildInfo(mesh(), "Slope4");
@@ -321,11 +492,11 @@ computePhi(CartesianPatch& patch)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        if (prev.null() || next.null())
-          continue;
+        // if (prev.null() || next.null())
+        //   continue;
 
-        Real dlft = phi[icell] - phi[prev];
-        Real drgt = phi[next] - phi[icell];
+        Real dlft = phi_tmp[icell] - phi_tmp[prev];
+        Real drgt = phi_tmp[next] - phi_tmp[icell];
         Real dcen = 0.5 * (dlft + drgt);
         Real dsgn = copysign(1.0, dcen);
         Real dslop = 2.0 * ((abs(dlft) < abs(drgt)) ? abs(dlft) : abs(drgt));
@@ -339,11 +510,11 @@ computePhi(CartesianPatch& patch)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        if (prev.null() || next.null())
-          continue;
+        // if (prev.null() || next.null())
+        //   continue;
 
-        Real dlft = phi[icell] - phi[prev];
-        Real drgt = phi[next] - phi[icell];
+        Real dlft = phi_tmp[icell] - phi_tmp[prev];
+        Real drgt = phi_tmp[next] - phi_tmp[icell];
         Real dcen = 0.5 * (dlft + drgt);
         Real dsgn = copysign(1.0, dcen);
         Real dslop = 2.0 * ((abs(dlft) < abs(drgt)) ? abs(dlft) : abs(drgt));
@@ -362,8 +533,12 @@ computePhi(CartesianPatch& patch)
           continue;
 
         phixy[iface] = ((m_velocity[iface] < 0) ?
-          phi[next] - slope4[next] * (0.5 + 0.5 * dtdx * m_velocity[iface]) :
-          phi[prev] + slope4[prev] * (0.5 - 0.5 * dtdx * m_velocity[iface]));
+          phi_tmp[next] - slope4[next] * (0.5 + 0.5 * dtdx * m_velocity[iface]) :
+          phi_tmp[prev] + slope4[prev] * (0.5 - 0.5 * dtdx * m_velocity[iface]));
+
+        if (iface->uniqueId() == 8657) {
+          info() << "phixy[8657] = " << phixy[iface];
+        }
       }
     }
 
@@ -373,11 +548,11 @@ computePhi(CartesianPatch& patch)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        if (prev.null() || next.null())
-          continue;
+        // if (prev.null() || next.null())
+        //   continue;
 
-        Real dlft = phi[icell] - phi[prev];
-        Real drgt = phi[next] - phi[icell];
+        Real dlft = phi_tmp[icell] - phi_tmp[prev];
+        Real drgt = phi_tmp[next] - phi_tmp[icell];
         Real dcen = 0.5 * (dlft + drgt);
         Real dsgn = copysign(1.0, dcen);
         Real dslop = 2.0 * ((abs(dlft) < abs(drgt)) ? abs(dlft) : abs(drgt));
@@ -391,11 +566,11 @@ computePhi(CartesianPatch& patch)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        if (prev.null() || next.null())
-          continue;
+        // if (prev.null() || next.null())
+        //   continue;
 
-        Real dlft = phi[icell] - phi[prev];
-        Real drgt = phi[next] - phi[icell];
+        Real dlft = phi_tmp[icell] - phi_tmp[prev];
+        Real drgt = phi_tmp[next] - phi_tmp[icell];
         Real dcen = 0.5 * (dlft + drgt);
         Real dsgn = copysign(1.0, dcen);
         Real dslop = 2.0 * ((abs(dlft) < abs(drgt)) ? abs(dlft) : abs(drgt));
@@ -415,8 +590,8 @@ computePhi(CartesianPatch& patch)
           continue;
 
         phixy[iface] = ((m_velocity[iface] < 0) ?
-          phi[next] - slope4[next] * (0.5 + 0.5 * dtdy * m_velocity[iface]) :
-          phi[prev] + slope4[prev] * (0.5 - 0.5 * dtdy * m_velocity[iface]));
+          phi_tmp[next] - slope4[next] * (0.5 + 0.5 * dtdy * m_velocity[iface]) :
+          phi_tmp[prev] + slope4[prev] * (0.5 - 0.5 * dtdy * m_velocity[iface]));
       }
     }
   }
@@ -441,6 +616,10 @@ computePhi(CartesianPatch& patch)
       tflux[iface] = ((m_velocity[iface] < 0) ?
         (phixy[iface] - 0.5 * dtdy * (0.5 * (m_velocity[next_f2] + m_velocity[next_f0]) * (phixy[next_f2] - phixy[next_f0]))) * m_velocity[iface] :
         (phixy[iface] - 0.5 * dtdy * (0.5 * (m_velocity[prev_f2] + m_velocity[prev_f0]) * (phixy[prev_f2] - phixy[prev_f0]))) * m_velocity[iface]);
+
+      if (iface->uniqueId() == 8657) {
+        info() << "tflux[8657] = " << tflux[iface];
+      }
     }
 
     ENUMERATE_ (Face, iface, fdm_y.innerFaces()) {
@@ -464,13 +643,13 @@ computePhi(CartesianPatch& patch)
   }
 
   {
-    ENUMERATE_ (Cell, icell, ownCells()) {
+    ENUMERATE_ (Cell, icell, patch.cells()) {
       Face f0 = icell->face(0);
       Face f1 = icell->face(1);
       Face f2 = icell->face(2);
       Face f3 = icell->face(3);
 
-      m_phi[icell] = phi[icell] + ((tflux[f3] - tflux[f1]) * dtdx + (tflux[f0] - tflux[f2]) * dtdy);
+      m_phi[icell] = phi_tmp[icell] + ((tflux[f3] - tflux[f1]) * dtdx + (tflux[f0] - tflux[f2]) * dtdy);
     }
   }
 
