@@ -38,7 +38,7 @@ class SayHelloModule
   void computePsi(Real time, CartesianPatch& patch);
   void computeVelocity(CartesianPatch& patch);
   void computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp);
-  void testMarkCellsToRefine();
+  void testMarkCellsToRefine(Integer level);
   bool markCellsToRefine(Integer max_level);
 
  private:

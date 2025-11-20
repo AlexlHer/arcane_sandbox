@@ -94,7 +94,7 @@ compute()
   m_cartesian_mesh->computeDirections();
 
   m_inout.fill(0);
-  m_indexpatch.fill(0);
+  m_indexpatch.fill(-1);
   m_velocity.fill(0);
   m_psi.fill(0);
 
@@ -115,7 +115,7 @@ compute()
 
 
   // Level l
-  for (Integer l = 0; l < 2; ++l) {
+  for (Integer l = 0; l < 1; ++l) {
     if (markCellsToRefine(l)) {
       info() << "NbPatches before refine : " << m_cartesian_mesh->nbPatch();
       m_cartesian_mesh->refine();
@@ -145,6 +145,39 @@ compute()
     }
   }
 
+  // for (Integer l = 1; l < 2; ++l) {
+  //   testMarkCellsToRefine(l);
+  //   m_cartesian_mesh->refine();
+  // }
+  //
+  // for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
+  //   auto patch = m_cartesian_mesh->amrPatch(p);
+  //   if (patch.level() == 1) {
+  //     CellDirectionMng cdm_x{ patch.cellDirection(MD_DirX) };
+  //     ENUMERATE_ (Cell, icell, cdm_x.innerCells()) {
+  //       // DirCell dir_cell(cdm_x[icell]);
+  //       // Cell next = dir_cell.next();
+  //       // Cell prev = dir_cell.previous();
+  //       // info() << "Check -- CellUID : " << icell->uniqueId() << " -- prev : " << prev.uniqueId() << " -- next : " << next.uniqueId();
+  //       m_inout[icell] += 10;
+  //     }
+  //     ENUMERATE_ (Cell, icell, cdm_x.outerCells()) {
+  //       m_inout[icell] += 1;
+  //       m_uidcells[icell] = icell->uniqueId();
+  //     }
+  //
+  //     FaceDirectionMng fdm_x{ patch.faceDirection(MD_DirX) };
+  //     ENUMERATE_ (Face, iface, fdm_x.innerFaces()){
+  //       DirFace cells_of_face(fdm_x[iface]);
+  //       Cell prev = cells_of_face.previousCell();
+  //       Cell next = cells_of_face.nextCell();
+  //       info() << "Check -- FaceUID : " << iface->uniqueId() << " -- prev : " << prev.uniqueId() << " -- next : " << next.uniqueId();
+  //     }
+  //   }
+  // }
+
+
+
   // info() << "FaceUID;Cell0;Cell1;Velocity;";
   //
   // ENUMERATE_(Face, iface, allFaces())
@@ -157,9 +190,6 @@ compute()
   //   info() << icell->uniqueId() << ";" << m_psi[icell] << ";" << m_phi[icell] << ";";
   // }
 
-  //
-  // m_cartesian_mesh->refine();
-  //
   info() << "Post-process AMR";
   IPostProcessorWriter* post_processor = options()->postProcessor();
   Directory output_directory = Directory(subDomain()->exportDirectory(),"amrtestpost1");
@@ -173,7 +203,8 @@ compute()
   // groups.add(allCells());
   for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
     auto patch = m_cartesian_mesh->amrPatch(p);
-    groups.add(patch.cells());
+    //groups.add(patch.cells());
+    groups.add(patch.ownCells());
   }
 
   post_processor->setGroups(groups);
@@ -268,17 +299,25 @@ computeVelocity(CartesianPatch& patch)
   // }
 
   ENUMERATE_ (Cell, icell, patch.cells()){
-    m_inout[icell] = 0;
+    //m_inout[icell] = 0;
     m_uidcells[icell] = icell->uniqueId();
+    //if (m_indexpatch[icell] == 0) {
+    //  m_indexpatch[icell] = -1;
+    //}
+  }
+  ENUMERATE_ (Cell, icell, patch.ownCells()){
     m_indexpatch[icell] = patch.index();
   }
 
   ENUMERATE_ (Cell, icell, cdm_x.innerCells()) {
+    m_inout[icell] += 10;
+  }
+  ENUMERATE_ (Cell, icell, cdm_x.outerCells()) {
     m_inout[icell] += 1;
   }
-  ENUMERATE_ (Cell, icell, cdm_y.innerCells()) {
-    m_inout[icell] += 1;
-  }
+  // ENUMERATE_ (Cell, icell, cdm_y.innerCells()) {
+  //   m_inout[icell] += 1;
+  // }
 
   {
     /*
@@ -299,86 +338,102 @@ computeVelocity(CartesianPatch& patch)
       //   info() << "3417 3418 : " << iface->uniqueId();
       // }
 
-      // TODO Normalement, en innerFaces, pas besoin.
-      if (prev.null() || next.null())
+      // TODO Normalement, en innerFaces, pas besoin, même au bord du mesh.
+      if (prev.null() || next.null()) {
+        if (patch.level() != 0) {
+          ARCANE_FATAL("aaa");
+        }
         continue;
+      }
 
       Cell c00;
       Cell c01;
       Cell c10;
       Cell c11;
 
-      auto flemme = [&](Integer i) {
-        if (iface->uniqueId() == 7371) {
-          info() << i << " c00 : " << c00.null() << " -- c01 : " << c01.null() << " -- cells_of_face.isPreviousCellOwn() : " << cells_of_face.isPreviousCellOwn();
-          info() << i << " c10 : " << c10.null() << " -- c11 : " << c11.null() << " -- cells_of_face.isNextCellOwn() : " << cells_of_face.isNextCellOwn();
-        }
-      };
+      // // Si next n'est pas dans notre patch, il faut passer par prev+c00 pour
+      // // avoir c10 et prev+c01 pour avoir c11.
+      // // TODO : Trouver une solution viable à mettre dans Arcane !
+      // if (!cells_of_face.isNextCellOwn()) {
+      //   if (!cells_of_face.isPreviousCellOwn()) {
+      //     ARCANE_FATAL("Impossible");
+      //   }
+      //   DirCell dir_y_prev_cell(cdm_y[prev]);
+      //   c00 = dir_y_prev_cell.previous();
+      //   c01 = dir_y_prev_cell.next();
+      //   if (c00.null() || c01.null())
+      //     continue;
+      //
+      //   DirCell dir_y_c00_cell(cdm_y[c00]);
+      //   c10 = dir_y_c00_cell.next();
+      //   DirCell dir_y_c01_cell(cdm_y[c01]);
+      //   c11 = dir_y_c01_cell.next();
+      //   if (c10.null() || c11.null())
+      //     continue;
+      // }
+      // // Si prev n'est pas dans notre patch, il faut passer par next+c10 pour
+      // // avoir c00 et next+c11 pour avoir c01.
+      // else if (!cells_of_face.isPreviousCellOwn()) {
+      //   if (!cells_of_face.isNextCellOwn()) {
+      //     ARCANE_FATAL("Impossible");
+      //   }
+      //   DirCell dir_y_next_cell(cdm_y[next]);
+      //   c10 = dir_y_next_cell.previous();
+      //   c11 = dir_y_next_cell.next();
+      //   if (c10.null() || c11.null())
+      //     continue;
+      //
+      //   DirCell dir_y_c10_cell(cdm_y[c10]);
+      //   c00 = dir_y_c10_cell.previous();
+      //   DirCell dir_y_c11_cell(cdm_y[c11]);
+      //   c01 = dir_y_c11_cell.previous();
+      //   if (c00.null() || c01.null())
+      //     continue;
+      // }
+      // else {
+      //   DirCell dir_y_prev_cell(cdm_y[prev]);
+      //   c00 = dir_y_prev_cell.previous();
+      //   c01 = dir_y_prev_cell.next();
+      //   if (c00.null() || c01.null())
+      //     continue;
+      //   DirCell dir_y_next_cell(cdm_y[next]);
+      //   c10 = dir_y_next_cell.previous();
+      //   c11 = dir_y_next_cell.next();
+      //   if (c10.null() || c11.null())
+      //     continue;
+      // }
 
-      // Si next n'est pas dans notre patch, il faut passer par prev+c00 pour
-      // avoir c10 et prev+c01 pour avoir c11.
-      // TODO : Trouver une solution viable à mettre dans Arcane !
-      if (!cells_of_face.isNextCellOwn()) {
-        if (!cells_of_face.isPreviousCellOwn()) {
-          ARCANE_FATAL("Impossible");
-        }
-        DirCell dir_y_prev_cell(cdm_y[prev]);
-        c00 = dir_y_prev_cell.previous();
-        c01 = dir_y_prev_cell.next();
-        if (c00.null() || c01.null())
-          continue;
-        flemme(0);
-
-        DirCell dir_y_c00_cell(cdm_y[c00]);
-        c10 = dir_y_c00_cell.next();
-        DirCell dir_y_c01_cell(cdm_y[c01]);
-        c11 = dir_y_c01_cell.next();
-        if (c10.null() || c11.null())
-          continue;
-      }
-      // Si prev n'est pas dans notre patch, il faut passer par next+c10 pour
-      // avoir c00 et next+c11 pour avoir c01.
-      else if (!cells_of_face.isPreviousCellOwn()) {
-        if (!cells_of_face.isNextCellOwn()) {
-          ARCANE_FATAL("Impossible");
-        }
-        DirCell dir_y_next_cell(cdm_y[next]);
-        c10 = dir_y_next_cell.previous();
-        c11 = dir_y_next_cell.next();
-        if (c10.null() || c11.null())
-          continue;
-        flemme(1);
-
-        DirCell dir_y_c10_cell(cdm_y[c10]);
-        c00 = dir_y_c10_cell.previous();
-        DirCell dir_y_c11_cell(cdm_y[c11]);
-        c01 = dir_y_c11_cell.previous();
-        flemme(5);
-        if (c00.null() || c01.null())
-          continue;
-      }
-      else {
-        DirCell dir_y_prev_cell(cdm_y[prev]);
-        c00 = dir_y_prev_cell.previous();
-        c01 = dir_y_prev_cell.next();
-        if (c00.null() || c01.null())
-          continue;
-        flemme(2);
-        DirCell dir_y_next_cell(cdm_y[next]);
-        c10 = dir_y_next_cell.previous();
-        c11 = dir_y_next_cell.next();
-        flemme(4);
-        if (c10.null() || c11.null())
-          continue;
+      DirCell dir_y_prev_cell(cdm_y[prev]);
+      c00 = dir_y_prev_cell.previous();
+      c01 = dir_y_prev_cell.next();
+      // Là, si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+      if (c00.null() || c01.null()) {
+        continue;
       }
 
-      flemme(3);
+      DirCell dir_y_next_cell(cdm_y[next]);
+      c10 = dir_y_next_cell.previous();
+      c11 = dir_y_next_cell.next();
+
+      // Là, si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+      if (c10.null() || c11.null()) {
+        continue;
+      }
+
+      Real old_value = -1;
+      if (m_velocity[iface] != 0) {
+        old_value = m_velocity[iface];
+      }
 
       m_velocity[iface] = -((m_psi[c11] + m_psi[c01]) - (m_psi[c10] + m_psi[c00])) * (0.25 / m_cell_size.y);
 
-      if (iface->uniqueId() == 7371) {
-        info() << "X 7371 " << m_velocity[iface];
+      if (old_value != -1 && old_value != m_velocity[iface]) {
+          ARCANE_FATAL("Velo");
       }
+
+      // if (iface->uniqueId() == 7371) {
+      //   info() << "X 7371 " << m_velocity[iface];
+      // }
     }
 
     /*
@@ -392,73 +447,100 @@ computeVelocity(CartesianPatch& patch)
       DirFace cells_of_face(fdm_y[iface]);
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
+      info() << "Check faceUID : " << iface->uniqueId() << " -- prev : " << prev.uniqueId() << " -- next : " << next.uniqueId();
       // info() << "---";
       // info() << "Face UID : " << iface->uniqueId();
       // info() << "Cell prev UID : " << prev.uniqueId();
       // info() << "Cell next UID : " << next.uniqueId();
       // info() << "---";
-      // TODO Normalement, en innerFaces, pas besoin.
-      if (prev.null() || next.null())
+      // TODO Normalement, en innerFaces, pas besoin, même au bord du mesh.
+      if (prev.null() || next.null()) {
         continue;
+      }
 
       Cell c00;
       Cell c01;
       Cell c10;
       Cell c11;
 
-      // Si next n'est pas dans notre patch, il faut passer par prev+c00 pour
-      // avoir c01 et prev+c10 pour avoir c11.
-      // TODO : Trouver une solution viable à mettre dans Arcane !
-      if (!cells_of_face.isNextCellOwn()) {
-        if (!cells_of_face.isPreviousCellOwn()) {
-          ARCANE_FATAL("Impossible");
-        }
-        DirCell dir_x_prev_cell(cdm_x[prev]);
-        c00 = dir_x_prev_cell.previous();
-        c10 = dir_x_prev_cell.next();
-        if (c00.null() || c10.null())
-          continue;
+      // // Si next n'est pas dans notre patch, il faut passer par prev+c00 pour
+      // // avoir c01 et prev+c10 pour avoir c11.
+      // // TODO : Trouver une solution viable à mettre dans Arcane !
+      // if (!cells_of_face.isNextCellOwn()) {
+      //   if (!cells_of_face.isPreviousCellOwn()) {
+      //     ARCANE_FATAL("Impossible");
+      //   }
+      //   DirCell dir_x_prev_cell(cdm_x[prev]);
+      //   c00 = dir_x_prev_cell.previous();
+      //   c10 = dir_x_prev_cell.next();
+      //   if (c00.null() || c10.null())
+      //     continue;
+      //
+      //   DirCell dir_x_c00_cell(cdm_x[c00]);
+      //   c01 = dir_x_c00_cell.next();
+      //   DirCell dir_x_c10_cell(cdm_x[c10]);
+      //   c11 = dir_x_c10_cell.next();
+      //   if (c01.null() || c11.null())
+      //     continue;
+      // }
+      // // Si prev n'est pas dans notre patch, il faut passer par next+c01 pour
+      // // avoir c00 et next+c11 pour avoir c10.
+      // else if (!cells_of_face.isPreviousCellOwn()) {
+      //   if (!cells_of_face.isNextCellOwn()) {
+      //     ARCANE_FATAL("Impossible");
+      //   }
+      //   DirCell dir_x_next_cell(cdm_x[next]);
+      //   c01 = dir_x_next_cell.previous();
+      //   c11 = dir_x_next_cell.next();
+      //   if (c01.null() || c11.null())
+      //     continue;
+      //
+      //   DirCell dir_x_c01_cell(cdm_x[c01]);
+      //   c00 = dir_x_c01_cell.previous();
+      //   DirCell dir_x_c11_cell(cdm_x[c11]);
+      //   c10 = dir_x_c11_cell.previous();
+      //   if (c00.null() || c10.null())
+      //     continue;
+      // }
+      // else {
+      //   DirCell dir_x_prev_cell(cdm_x[prev]);
+      //   c00 = dir_x_prev_cell.previous();
+      //   c10 = dir_x_prev_cell.next();
+      //   if (c00.null() || c10.null())
+      //     continue;
+      //   DirCell dir_x_next_cell(cdm_x[next]);
+      //   c01 = dir_x_next_cell.previous();
+      //   c11 = dir_x_next_cell.next();
+      //   if (c01.null() || c11.null())
+      //     continue;
+      // }
 
-        DirCell dir_x_c00_cell(cdm_x[c00]);
-        c01 = dir_x_c00_cell.next();
-        DirCell dir_x_c10_cell(cdm_x[c10]);
-        c11 = dir_x_c10_cell.next();
-        if (c01.null() || c11.null())
-          continue;
+      DirCell dir_x_prev_cell(cdm_x[prev]);
+      c00 = dir_x_prev_cell.previous();
+      c10 = dir_x_prev_cell.next();
+      // Là, si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+      if (c00.null() || c10.null()) {
+        continue;
       }
-      // Si prev n'est pas dans notre patch, il faut passer par next+c01 pour
-      // avoir c00 et next+c11 pour avoir c10.
-      else if (!cells_of_face.isPreviousCellOwn()) {
-        if (!cells_of_face.isNextCellOwn()) {
-          ARCANE_FATAL("Impossible");
-        }
-        DirCell dir_x_next_cell(cdm_x[next]);
-        c01 = dir_x_next_cell.previous();
-        c11 = dir_x_next_cell.next();
-        if (c01.null() || c11.null())
-          continue;
 
-        DirCell dir_x_c01_cell(cdm_x[c01]);
-        c00 = dir_x_c01_cell.previous();
-        DirCell dir_x_c11_cell(cdm_x[c11]);
-        c10 = dir_x_c11_cell.previous();
-        if (c00.null() || c10.null())
-          continue;
+      DirCell dir_x_next_cell(cdm_x[next]);
+      c01 = dir_x_next_cell.previous();
+      c11 = dir_x_next_cell.next();
+      // Là, si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+      if (c01.null() || c11.null()) {
+        continue;
       }
-      else {
-        DirCell dir_x_prev_cell(cdm_x[prev]);
-        c00 = dir_x_prev_cell.previous();
-        c10 = dir_x_prev_cell.next();
-        if (c00.null() || c10.null())
-          continue;
-        DirCell dir_x_next_cell(cdm_x[next]);
-        c01 = dir_x_next_cell.previous();
-        c11 = dir_x_next_cell.next();
-        if (c01.null() || c11.null())
-          continue;
+
+      Real old_value = -1;
+      if (m_velocity[iface] != 0) {
+        old_value = m_velocity[iface];
       }
 
       m_velocity[iface] = ((m_psi[c11] + m_psi[c10]) - (m_psi[c01] + m_psi[c00])) * (0.25 / m_cell_size.x);
+
+      if (old_value != -1 && old_value != m_velocity[iface]) {
+        ARCANE_FATAL("Velo");
+      }
     }
   }
   m_velocity.synchronize();
@@ -492,8 +574,11 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        // if (prev.null() || next.null())
-        //   continue;
+        // TODO : innerCells sur level 0.
+        // Si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+        if (prev.null() || next.null()) {
+          continue;
+        }
 
         Real dlft = phi_tmp[icell] - phi_tmp[prev];
         Real drgt = phi_tmp[next] - phi_tmp[icell];
@@ -510,8 +595,11 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        // if (prev.null() || next.null())
-        //   continue;
+        // TODO : innerCells sur level 0.
+        // Si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+        if (prev.null() || next.null()) {
+          continue;
+        }
 
         Real dlft = phi_tmp[icell] - phi_tmp[prev];
         Real drgt = phi_tmp[next] - phi_tmp[icell];
@@ -535,10 +623,6 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
         phixy[iface] = ((m_velocity[iface] < 0) ?
           phi_tmp[next] - slope4[next] * (0.5 + 0.5 * dtdx * m_velocity[iface]) :
           phi_tmp[prev] + slope4[prev] * (0.5 - 0.5 * dtdx * m_velocity[iface]));
-
-        if (iface->uniqueId() == 8657) {
-          info() << "phixy[8657] = " << phixy[iface];
-        }
       }
     }
 
@@ -548,8 +632,11 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        // if (prev.null() || next.null())
-        //   continue;
+        // TODO : innerCells sur level 0.
+        // Si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+        if (prev.null() || next.null()) {
+          continue;
+        }
 
         Real dlft = phi_tmp[icell] - phi_tmp[prev];
         Real drgt = phi_tmp[next] - phi_tmp[icell];
@@ -566,8 +653,11 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
 
-        // if (prev.null() || next.null())
-        //   continue;
+        // TODO : innerCells sur level 0.
+        // Si on est au bord du mesh, ces mailles peuvent ne pas exister (pas de périodicité).
+        if (prev.null() || next.null()) {
+          continue;
+        }
 
         Real dlft = phi_tmp[icell] - phi_tmp[prev];
         Real drgt = phi_tmp[next] - phi_tmp[icell];
@@ -586,8 +676,9 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
         Cell next = cells_of_face.nextCell();
 
         // TODO Normalement, en innerFaces, pas besoin.
-        if (prev.null() || next.null())
+        if (prev.null() || next.null()) {
           continue;
+        }
 
         phixy[iface] = ((m_velocity[iface] < 0) ?
           phi_tmp[next] - slope4[next] * (0.5 + 0.5 * dtdy * m_velocity[iface]) :
@@ -604,8 +695,9 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
       // TODO Normalement, en innerFaces, pas besoin.
-      if (prev.null() || next.null())
+      if (prev.null() || next.null()) {
         continue;
+      }
 
       Face next_f2 = next.face(2);
       Face next_f0 = next.face(0);
@@ -627,8 +719,9 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
       // TODO Normalement, en innerFaces, pas besoin.
-      if (prev.null() || next.null())
+      if (prev.null() || next.null()) {
         continue;
+      }
 
       Face next_f1 = next.face(1);
       Face next_f3 = next.face(3);
@@ -643,7 +736,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
   }
 
   {
-    ENUMERATE_ (Cell, icell, patch.cells()) {
+    ENUMERATE_ (Cell, icell, patch.ownCells()) {
       Face f0 = icell->face(0);
       Face f1 = icell->face(1);
       Face f2 = icell->face(2);
@@ -660,102 +753,111 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
 /*---------------------------------------------------------------------------*/
 
 void SayHelloModule::
-testMarkCellsToRefine()
+testMarkCellsToRefine(Integer level)
 {
-  ENUMERATE_ (Cell, icell, mesh()->allLevelCells(0)) {
-    Integer pos_x = m_numbering->cellUniqueIdToCoordX(*icell);
-    Integer pos_y = m_numbering->cellUniqueIdToCoordY(*icell);
+  for (Integer l = level-1; l < level; ++l) {
 
-    // if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
-    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    // }
-    //
-    // if (pos_x >= 7 && pos_x < 11 && pos_y >= 6 && pos_y < 9) {
-    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    // }
+    ENUMERATE_ (Cell, icell, mesh()->allLevelCells(l)) {
+      Integer pos_x = m_numbering->offsetLevelToLevel(m_numbering->cellUniqueIdToCoordX(*icell), l, 0);
+      Integer pos_y = m_numbering->offsetLevelToLevel(m_numbering->cellUniqueIdToCoordY(*icell), l, 0);
 
-    if (pos_x >= 3 && pos_x < 11 && pos_y >= 25 && pos_y < 37) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
+      // if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 7 && pos_x < 11 && pos_y >= 6 && pos_y < 9) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
 
-    if (pos_x >= 19 && pos_x < 27 && pos_y >= 2 && pos_y < 19) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 19 && pos_x < 27 && pos_y >= 43 && pos_y < 60) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
+      if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
+        icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      }
+      if (pos_x >= 6 && pos_x < 10 && pos_y >= 4 && pos_y < 7) {
+        icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      }
 
-    if (pos_x >= 5 && pos_x < 12 && pos_y >= 19 && pos_y < 29) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 7 && pos_x < 13 && pos_y >= 17 && pos_y < 26) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 9 && pos_x < 15 && pos_y >= 15 && pos_y < 23) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 11 && pos_x < 16 && pos_y >= 13 && pos_y < 22) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 15 && pos_x < 18 && pos_y >= 11 && pos_y < 21) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 18 && pos_x < 21 && pos_y >= 11 && pos_y < 20) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-
-    if (pos_x >= 5 && pos_x < 12 && pos_y >= 33 && pos_y < 43) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 7 && pos_x < 13 && pos_y >= 36 && pos_y < 45) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 9 && pos_x < 15 && pos_y >= 39 && pos_y < 47) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 11 && pos_x < 16 && pos_y >= 40 && pos_y < 49) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 15 && pos_x < 18 && pos_y >= 41 && pos_y < 51) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-    }
-    if (pos_x >= 18 && pos_x < 21 && pos_y >= 42 && pos_y < 51) {
-      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // if (pos_x >= 3 && pos_x < 11 && pos_y >= 25 && pos_y < 37) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      //
+      // if (pos_x >= 19 && pos_x < 27 && pos_y >= 2 && pos_y < 19) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 19 && pos_x < 27 && pos_y >= 43 && pos_y < 60) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      //
+      // if (pos_x >= 5 && pos_x < 12 && pos_y >= 19 && pos_y < 29) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 7 && pos_x < 13 && pos_y >= 17 && pos_y < 26) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 9 && pos_x < 15 && pos_y >= 15 && pos_y < 23) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 11 && pos_x < 16 && pos_y >= 13 && pos_y < 22) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 15 && pos_x < 18 && pos_y >= 11 && pos_y < 21) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 18 && pos_x < 21 && pos_y >= 11 && pos_y < 20) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      //
+      // if (pos_x >= 5 && pos_x < 12 && pos_y >= 33 && pos_y < 43) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 7 && pos_x < 13 && pos_y >= 36 && pos_y < 45) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 9 && pos_x < 15 && pos_y >= 39 && pos_y < 47) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 11 && pos_x < 16 && pos_y >= 40 && pos_y < 49) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 15 && pos_x < 18 && pos_y >= 41 && pos_y < 51) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 18 && pos_x < 21 && pos_y >= 42 && pos_y < 51) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
     }
   }
-
-  Integer nb_cell_x = m_numbering->globalNbCellsX(1);
-
-  StringBuilder str = "";
-  ENUMERATE_(Cell, icell, ownCells()) {
-    if (icell->level() != 1) continue;
-    if (icell->uniqueId().asInt32() % nb_cell_x == 0) {
-      str += "\n";
-    }
-    if (icell->hasFlags(ItemFlags::II_Refine)) {
-      str += "[XX]";
-    }
-    else {
-      str += "[..]";
-    }
-  }
-  info() << str;
-
-  nb_cell_x = m_numbering->globalNbCellsX(0);
-  str = "";
-  ENUMERATE_(Cell, icell, ownCells()) {
-    if (icell->level() != 0) continue;
-    if (icell->uniqueId().asInt32() % nb_cell_x == 0) {
-      str += "\n";
-    }
-    if (icell->hasFlags(ItemFlags::II_Refine)) {
-      str += "[XX]";
-    }
-    else {
-      str += "[..]";
-    }
-  }
-  info() << str;
+  //
+  // Integer nb_cell_x = m_numbering->globalNbCellsX(1);
+  //
+  // StringBuilder str = "";
+  // ENUMERATE_(Cell, icell, ownCells()) {
+  //   if (icell->level() != 1) continue;
+  //   if (icell->uniqueId().asInt32() % nb_cell_x == 0) {
+  //     str += "\n";
+  //   }
+  //   if (icell->hasFlags(ItemFlags::II_Refine)) {
+  //     str += "[XX]";
+  //   }
+  //   else {
+  //     str += "[..]";
+  //   }
+  // }
+  // info() << str;
+  //
+  // nb_cell_x = m_numbering->globalNbCellsX(0);
+  // str = "";
+  // ENUMERATE_(Cell, icell, ownCells()) {
+  //   if (icell->level() != 0) continue;
+  //   if (icell->uniqueId().asInt32() % nb_cell_x == 0) {
+  //     str += "\n";
+  //   }
+  //   if (icell->hasFlags(ItemFlags::II_Refine)) {
+  //     str += "[XX]";
+  //   }
+  //   else {
+  //     str += "[..]";
+  //   }
+  // }
+  // info() << str;
 }
 
 /*---------------------------------------------------------------------------*/
