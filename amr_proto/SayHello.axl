@@ -26,8 +26,29 @@
         dim="0"
     />
     <variable
-        field-name="inout"
-        name="Inout"
+        field-name="inner"
+        name="Inner"
+        data-type="integer"
+        item-kind="cell"
+        dim="0"
+    />
+    <variable
+        field-name="outer"
+        name="Outer"
+        data-type="integer"
+        item-kind="cell"
+        dim="0"
+    />
+    <variable
+        field-name="inpatch"
+        name="Inpatch"
+        data-type="integer"
+        item-kind="cell"
+        dim="0"
+    />
+    <variable
+        field-name="overall"
+        name="Overall"
         data-type="integer"
         item-kind="cell"
         dim="0"

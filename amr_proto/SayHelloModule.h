@@ -9,7 +9,7 @@
 
 #include "SayHello_axl.h"
 
-#include <arcane/cartesianmesh/ICartesianMeshNumberingMng.h>
+#include <arcane/cartesianmesh/CartesianMeshNumberingMng.h>
 
 struct LevelPatches;
 using namespace Arcane;
@@ -47,7 +47,6 @@ class SayHelloModule
   Real3 m_origin;
   Int32x3 m_nb_cells;
   ICartesianMesh* m_cartesian_mesh;
-  Ref<ICartesianMeshNumberingMng> m_numbering;
   Real3 m_cell_size;
   UniqueArray<Real> times;
 };

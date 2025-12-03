@@ -14,15 +14,13 @@
 #include <arcane/utils/ITraceMng.h>
 #include <arcane/utils/Vector2.h>
 #include <arcane/utils/NumArray.h>
-#include <arcane/utils/Array3View.h>
 
 #include "arcane/core/ICartesianMeshGenerationInfo.h"
 #include "arcane/core/Directory.h"
 #include "arcane/core/IVariableMng.h"
 #include "arcane/utils/List.h"
-#include "arcane/cartesianmesh/ICartesianMeshAMRPatchMng.h"
 #include "arcane/cartesianmesh/CartesianMeshPatchListView.h"
-#include "arcane/cartesianmesh/CartesianMeshUtils.h"
+#include "arcane/cartesianmesh/CartesianMeshAMRMng.h"
 
 #include <arcane/cartesianmesh/CartesianPatch.h>
 #include <arcane/cartesianmesh/CellDirectionMng.h>
@@ -40,11 +38,10 @@ startInit()
 
   m_cartesian_mesh = ICartesianMesh::getReference(mesh());
 
-  // Ref<ICartesianMeshAMRPatchMng> coarser = CartesianMeshUtils::cartesianMeshAMRPatchMng(m_cartesian_mesh);
-  // coarser->createSubLevel();
-  m_cartesian_mesh->computeDirections();
+  // CartesianMeshAMRMng amr_mng(m_cartesian_mesh);
+  // amr_mng.createSubLevel();
 
-  m_numbering = CartesianMeshUtils::cartesianMeshNumberingMng(m_cartesian_mesh);
+  m_cartesian_mesh->computeDirections();
 
   const auto* m_generation_info = ICartesianMeshGenerationInfo::getReference(mesh(), true);
   m_global_deltat = 0.01;
@@ -93,7 +90,10 @@ compute()
 
   m_cartesian_mesh->computeDirections();
 
-  m_inout.fill(0);
+  m_inner.fill(0);
+  m_outer.fill(0);
+  m_overall.fill(0);
+  m_inpatch.fill(0);
   m_indexpatch.fill(-1);
   m_velocity.fill(0);
   m_psi.fill(0);
@@ -152,7 +152,7 @@ compute()
   //
   // for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
   //   auto patch = m_cartesian_mesh->amrPatch(p);
-  //   if (patch.level() == 1) {
+  //   //if (patch.level() == 1) {
   //     CellDirectionMng cdm_x{ patch.cellDirection(MD_DirX) };
   //     ENUMERATE_ (Cell, icell, cdm_x.innerCells()) {
   //       // DirCell dir_cell(cdm_x[icell]);
@@ -171,9 +171,9 @@ compute()
   //       DirFace cells_of_face(fdm_x[iface]);
   //       Cell prev = cells_of_face.previousCell();
   //       Cell next = cells_of_face.nextCell();
-  //       info() << "Check -- FaceUID : " << iface->uniqueId() << " -- prev : " << prev.uniqueId() << " -- next : " << next.uniqueId();
+  //       // info() << "Check -- FaceUID : " << iface->uniqueId() << " -- prev : " << prev.uniqueId() << " -- next : " << next.uniqueId();
   //     }
-  //   }
+  //   //}
   // }
 
 
@@ -203,8 +203,8 @@ compute()
   // groups.add(allCells());
   for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
     auto patch = m_cartesian_mesh->amrPatch(p);
-    //groups.add(patch.cells());
-    groups.add(patch.ownCells());
+    groups.add(patch.cells());
+    //groups.add(patch.ownCells());
   }
 
   post_processor->setGroups(groups);
@@ -305,15 +305,21 @@ computeVelocity(CartesianPatch& patch)
     //  m_indexpatch[icell] = -1;
     //}
   }
-  ENUMERATE_ (Cell, icell, patch.ownCells()){
+  ENUMERATE_ (Cell, icell, patch.inPatchCells()){
     m_indexpatch[icell] = patch.index();
   }
 
   ENUMERATE_ (Cell, icell, cdm_x.innerCells()) {
-    m_inout[icell] += 10;
+    m_inner[icell] += 1;
   }
   ENUMERATE_ (Cell, icell, cdm_x.outerCells()) {
-    m_inout[icell] += 1;
+    m_outer[icell] += 1;
+  }
+  ENUMERATE_ (Cell, icell, cdm_x.inPatchCells()) {
+    m_inpatch[icell] += 1;
+  }
+  ENUMERATE_ (Cell, icell, cdm_x.overallCells()) {
+    m_overall[icell] += 1;
   }
   // ENUMERATE_ (Cell, icell, cdm_y.innerCells()) {
   //   m_inout[icell] += 1;
@@ -329,7 +335,7 @@ computeVelocity(CartesianPatch& patch)
      * |  00  |  10  |
      * |------|------|
      */
-    ENUMERATE_ (Face, iface, fdm_x.innerFaces()) {
+    ENUMERATE_ (Face, iface, fdm_x.inPatchFaces()) {
       DirFace cells_of_face(fdm_x[iface]);
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
@@ -338,11 +344,7 @@ computeVelocity(CartesianPatch& patch)
       //   info() << "3417 3418 : " << iface->uniqueId();
       // }
 
-      // TODO Normalement, en innerFaces, pas besoin, même au bord du mesh.
       if (prev.null() || next.null()) {
-        if (patch.level() != 0) {
-          ARCANE_FATAL("aaa");
-        }
         continue;
       }
 
@@ -443,17 +445,17 @@ computeVelocity(CartesianPatch& patch)
      * |  00  | prev |  10  |
      * |------|------|------|
      */
-    ENUMERATE_ (Face, iface, fdm_y.innerFaces()) {
+    ENUMERATE_ (Face, iface, fdm_y.inPatchFaces()) {
       DirFace cells_of_face(fdm_y[iface]);
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
-      info() << "Check faceUID : " << iface->uniqueId() << " -- prev : " << prev.uniqueId() << " -- next : " << next.uniqueId();
+      //info() << "Check faceUID : " << iface->uniqueId() << " -- prev : " << prev.uniqueId() << " -- next : " << next.uniqueId();
       // info() << "---";
       // info() << "Face UID : " << iface->uniqueId();
       // info() << "Cell prev UID : " << prev.uniqueId();
       // info() << "Cell next UID : " << next.uniqueId();
       // info() << "---";
-      // TODO Normalement, en innerFaces, pas besoin, même au bord du mesh.
+
       if (prev.null() || next.null()) {
         continue;
       }
@@ -569,7 +571,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
     VariableCellReal slope2 = VariableBuildInfo(mesh(), "Slope2");
     VariableCellReal slope4 = VariableBuildInfo(mesh(), "Slope4");
     {
-      ENUMERATE_ (Cell, icell, cdm_x.innerCells()) {
+      ENUMERATE_ (Cell, icell, cdm_x.inPatchCells()) {
         DirCell dir_cell(cdm_x[icell]);
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
@@ -590,7 +592,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
       }
       slope2.synchronize();
 
-      ENUMERATE_ (Cell, icell, cdm_x.innerCells()) {
+      ENUMERATE_ (Cell, icell, cdm_x.inPatchCells()) {
         DirCell dir_cell(cdm_x[icell]);
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
@@ -612,7 +614,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
       }
       slope4.synchronize();
 
-      ENUMERATE_ (Face, iface, fdm_x.innerFaces()) {
+      ENUMERATE_ (Face, iface, fdm_x.inPatchFaces()) {
         DirFace cells_of_face(fdm_x[iface]);
         Cell prev = cells_of_face.previousCell();
         Cell next = cells_of_face.nextCell();
@@ -627,7 +629,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
     }
 
     {
-      ENUMERATE_ (Cell, icell, cdm_y.innerCells()) {
+      ENUMERATE_ (Cell, icell, cdm_y.inPatchCells()) {
         DirCell dir_cell(cdm_y[icell]);
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
@@ -648,7 +650,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
       }
       slope2.synchronize();
 
-      ENUMERATE_ (Cell, icell, cdm_y.innerCells()) {
+      ENUMERATE_ (Cell, icell, cdm_y.inPatchCells()) {
         DirCell dir_cell(cdm_y[icell]);
         Cell next = dir_cell.next();
         Cell prev = dir_cell.previous();
@@ -670,7 +672,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
       }
       slope4.synchronize();
 
-      ENUMERATE_ (Face, iface, fdm_y.innerFaces()) {
+      ENUMERATE_ (Face, iface, fdm_y.inPatchFaces()) {
         DirFace cells_of_face(fdm_y[iface]);
         Cell prev = cells_of_face.previousCell();
         Cell next = cells_of_face.nextCell();
@@ -690,7 +692,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
 
   VariableFaceReal tflux = VariableBuildInfo(mesh(), "Tflux");
   {
-    ENUMERATE_ (Face, iface, fdm_x.innerFaces()) {
+    ENUMERATE_ (Face, iface, fdm_x.inPatchFaces()) {
       DirFace cells_of_face(fdm_x[iface]);
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
@@ -714,7 +716,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
       }
     }
 
-    ENUMERATE_ (Face, iface, fdm_y.innerFaces()) {
+    ENUMERATE_ (Face, iface, fdm_y.inPatchFaces()) {
       DirFace cells_of_face(fdm_y[iface]);
       Cell prev = cells_of_face.previousCell();
       Cell next = cells_of_face.nextCell();
@@ -736,7 +738,7 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
   }
 
   {
-    ENUMERATE_ (Cell, icell, patch.ownCells()) {
+    ENUMERATE_ (Cell, icell, patch.inPatchCells()) {
       Face f0 = icell->face(0);
       Face f1 = icell->face(1);
       Face f2 = icell->face(2);
@@ -755,25 +757,39 @@ computePhi(CartesianPatch& patch, VariableCellReal& phi_tmp)
 void SayHelloModule::
 testMarkCellsToRefine(Integer level)
 {
+  CartesianMeshNumberingMng numbering(m_cartesian_mesh);
   for (Integer l = level-1; l < level; ++l) {
 
     ENUMERATE_ (Cell, icell, mesh()->allLevelCells(l)) {
-      Integer pos_x = m_numbering->offsetLevelToLevel(m_numbering->cellUniqueIdToCoordX(*icell), l, 0);
-      Integer pos_y = m_numbering->offsetLevelToLevel(m_numbering->cellUniqueIdToCoordY(*icell), l, 0);
-
-      // if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 7 && pos_x < 11 && pos_y >= 6 && pos_y < 9) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
+      Integer pos_x = numbering.offsetLevelToLevel(numbering.cellUniqueIdToCoordX(*icell), l, 0);
+      Integer pos_y = numbering.offsetLevelToLevel(numbering.cellUniqueIdToCoordY(*icell), l, 0);
 
       if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
         icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
       }
-      if (pos_x >= 6 && pos_x < 10 && pos_y >= 4 && pos_y < 7) {
+      if (pos_x >= 7 && pos_x < 11 && pos_y >= 6 && pos_y < 9) {
         icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
       }
+
+      ////////////////////////
+
+      // if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 6 && pos_x < 10 && pos_y >= 4 && pos_y < 7) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+
+      ///////////////////////
+
+      // if (pos_x >= 6 && pos_x < 26 && pos_y >= 4 && pos_y < 7) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+      // if (pos_x >= 7 && pos_x < 12 && pos_y >= 10 && pos_y < 26) {
+      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+      // }
+
+      ///////////////////////
 
       // if (pos_x >= 3 && pos_x < 11 && pos_y >= 25 && pos_y < 37) {
       //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
@@ -826,7 +842,7 @@ testMarkCellsToRefine(Integer level)
     }
   }
   //
-  // Integer nb_cell_x = m_numbering->globalNbCellsX(1);
+  // Integer nb_cell_x = numbering.globalNbCellsX(1);
   //
   // StringBuilder str = "";
   // ENUMERATE_(Cell, icell, ownCells()) {
@@ -843,7 +859,7 @@ testMarkCellsToRefine(Integer level)
   // }
   // info() << str;
   //
-  // nb_cell_x = m_numbering->globalNbCellsX(0);
+  // nb_cell_x = numbering.globalNbCellsX(0);
   // str = "";
   // ENUMERATE_(Cell, icell, ownCells()) {
   //   if (icell->level() != 0) continue;
@@ -882,26 +898,6 @@ markCellsToRefine(Integer max_level)
       }
     }
   }
-  if (!is_edit) {
-    return false;
-  }
-
-
-  Integer nb_cell_x = m_numbering->globalNbCellsX(max_level);
-
-  StringBuilder str = "";
-  ENUMERATE_(Cell, icell, mesh()->allLevelCells(max_level)) {
-    if (icell->uniqueId().asInt32() % nb_cell_x == 0) {
-      str += "\n";
-    }
-    if (icell->hasFlags(ItemFlags::II_Refine)) {
-      str += "[XX]";
-    }
-    else {
-      str += "[..]";
-    }
-  }
-  info() << str;
 
   return true;
 }
