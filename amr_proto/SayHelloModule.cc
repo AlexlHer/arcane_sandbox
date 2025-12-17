@@ -38,8 +38,9 @@ startInit()
 
   m_cartesian_mesh = ICartesianMesh::getReference(mesh());
 
-  // CartesianMeshAMRMng amr_mng(m_cartesian_mesh);
+  CartesianMeshAMRMng amr_mng(m_cartesian_mesh);
   // amr_mng.createSubLevel();
+  amr_mng.enableOverlapLayer(true);
 
   m_cartesian_mesh->computeDirections();
 
@@ -89,6 +90,7 @@ compute()
   info() << "Module SayHello COMPUTE";
 
   m_cartesian_mesh->computeDirections();
+  CartesianMeshAMRMng amr_mng(m_cartesian_mesh);
 
   m_inner.fill(0);
   m_outer.fill(0);
@@ -118,7 +120,7 @@ compute()
   for (Integer l = 0; l < 1; ++l) {
     if (markCellsToRefine(l)) {
       info() << "NbPatches before refine : " << m_cartesian_mesh->nbPatch();
-      m_cartesian_mesh->refine();
+      amr_mng.adaptMesh();
       info() << "NbPatches after refine : " << m_cartesian_mesh->nbPatch();
       syncUp(l, m_phi);
 
