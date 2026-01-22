@@ -17,10 +17,10 @@
   <mesh amr-type="3">
     <meshgenerator>
       <cartesian>
-        <nsd>1 1</nsd>
+        <nsd>2 2</nsd>
         <origine>0.0 0.0</origine>
-        <lx nx='20'>20.0</lx>
-        <ly ny='20'>20.0</ly>
+        <lx nx='16'>64.0</lx>
+        <ly ny='16'>64.0</ly>
       </cartesian>
     </meshgenerator>
   </mesh>

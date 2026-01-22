@@ -40,7 +40,7 @@ startInit()
 
   CartesianMeshAMRMng amr_mng(m_cartesian_mesh);
   // amr_mng.createSubLevel();
-  amr_mng.enableOverlapLayer(true);
+  amr_mng.setOverlapLayerSizeTopLevel(2);
 
   m_cartesian_mesh->computeDirections();
 
@@ -94,11 +94,13 @@ compute()
 
   m_inner.fill(0);
   m_outer.fill(0);
-  m_overall.fill(0);
+  m_overlap.fill(0);
   m_inpatch.fill(0);
   m_indexpatch.fill(-1);
   m_velocity.fill(0);
   m_psi.fill(0);
+
+  if (1) {
 
   // Level 0
   {
@@ -117,10 +119,11 @@ compute()
 
 
   // Level l
+  amr_mng.beginAdaptMesh(2, 0);
   for (Integer l = 0; l < 1; ++l) {
     if (markCellsToRefine(l)) {
       info() << "NbPatches before refine : " << m_cartesian_mesh->nbPatch();
-      amr_mng.adaptMesh();
+      amr_mng.adaptLevel(l);
       info() << "NbPatches after refine : " << m_cartesian_mesh->nbPatch();
       syncUp(l, m_phi);
 
@@ -146,11 +149,31 @@ compute()
       }
     }
   }
+  amr_mng.endAdaptMesh();
+  }
 
-  // for (Integer l = 1; l < 2; ++l) {
+  // amr_mng.beginAdaptMesh(6, 0);
+  // for (Integer l = 0; l < 5; ++l) {
   //   testMarkCellsToRefine(l);
-  //   m_cartesian_mesh->refine();
+  //   amr_mng.adaptMesh(l);
   // }
+  // amr_mng.endAdaptMesh();
+  //
+  // for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
+  //   auto patch = m_cartesian_mesh->amrPatch(p);
+  //   ENUMERATE_ (Cell, icell, patch.cells()){
+  //     if (icell->hasFlags(ItemFlags::II_Overlap)) {
+  //       m_overlap[icell] += 1;
+  //     }
+  //     if (icell->hasFlags(ItemFlags::II_InPatch)) {
+  //       m_inpatch[icell] += 1;
+  //     }
+  //   }
+  // }
+  // ENUMERATE_ (Cell, icell, allCells()){
+  //   m_uidcells[icell] = icell->uniqueId();
+  // }
+
   //
   // for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
   //   auto patch = m_cartesian_mesh->amrPatch(p);
@@ -205,8 +228,8 @@ compute()
   // groups.add(allCells());
   for (Integer p = 0; p < m_cartesian_mesh->nbPatch(); ++p) {
     auto patch = m_cartesian_mesh->amrPatch(p);
-    groups.add(patch.cells());
-    //groups.add(patch.ownCells());
+    //groups.add(patch.cells());
+    groups.add(patch.inPatchCells());
   }
 
   post_processor->setGroups(groups);
@@ -320,8 +343,8 @@ computeVelocity(CartesianPatch& patch)
   ENUMERATE_ (Cell, icell, cdm_x.inPatchCells()) {
     m_inpatch[icell] += 1;
   }
-  ENUMERATE_ (Cell, icell, cdm_x.overallCells()) {
-    m_overall[icell] += 1;
+  ENUMERATE_ (Cell, icell, cdm_x.overlapCells()) {
+    m_overlap[icell] += 1;
   }
   // ENUMERATE_ (Cell, icell, cdm_y.innerCells()) {
   //   m_inout[icell] += 1;
@@ -760,89 +783,88 @@ void SayHelloModule::
 testMarkCellsToRefine(Integer level)
 {
   CartesianMeshNumberingMng numbering(m_cartesian_mesh);
-  for (Integer l = level-1; l < level; ++l) {
 
-    ENUMERATE_ (Cell, icell, mesh()->allLevelCells(l)) {
-      Integer pos_x = numbering.offsetLevelToLevel(numbering.cellUniqueIdToCoordX(*icell), l, 0);
-      Integer pos_y = numbering.offsetLevelToLevel(numbering.cellUniqueIdToCoordY(*icell), l, 0);
+  ENUMERATE_ (Cell, icell, mesh()->allLevelCells(level)) {
+    Integer pos_x = numbering.offsetLevelToLevel(numbering.cellUniqueIdToCoordX(*icell), level, 0);
+    Integer pos_y = numbering.offsetLevelToLevel(numbering.cellUniqueIdToCoordY(*icell), level, 0);
 
-      if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
-        icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      }
-      if (pos_x >= 7 && pos_x < 11 && pos_y >= 6 && pos_y < 9) {
-        icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      }
-
-      ////////////////////////
-
-      // if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 6 && pos_x < 10 && pos_y >= 4 && pos_y < 7) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-
-      ///////////////////////
-
-      // if (pos_x >= 6 && pos_x < 26 && pos_y >= 4 && pos_y < 7) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 7 && pos_x < 12 && pos_y >= 10 && pos_y < 26) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-
-      ///////////////////////
-
-      // if (pos_x >= 3 && pos_x < 11 && pos_y >= 25 && pos_y < 37) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      //
-      // if (pos_x >= 19 && pos_x < 27 && pos_y >= 2 && pos_y < 19) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 19 && pos_x < 27 && pos_y >= 43 && pos_y < 60) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      //
-      // if (pos_x >= 5 && pos_x < 12 && pos_y >= 19 && pos_y < 29) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 7 && pos_x < 13 && pos_y >= 17 && pos_y < 26) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 9 && pos_x < 15 && pos_y >= 15 && pos_y < 23) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 11 && pos_x < 16 && pos_y >= 13 && pos_y < 22) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 15 && pos_x < 18 && pos_y >= 11 && pos_y < 21) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 18 && pos_x < 21 && pos_y >= 11 && pos_y < 20) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      //
-      // if (pos_x >= 5 && pos_x < 12 && pos_y >= 33 && pos_y < 43) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 7 && pos_x < 13 && pos_y >= 36 && pos_y < 45) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 9 && pos_x < 15 && pos_y >= 39 && pos_y < 47) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 11 && pos_x < 16 && pos_y >= 40 && pos_y < 49) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 15 && pos_x < 18 && pos_y >= 41 && pos_y < 51) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
-      // if (pos_x >= 18 && pos_x < 21 && pos_y >= 42 && pos_y < 51) {
-      //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
-      // }
+    if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
+      icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
     }
+    // if (pos_x >= 7 && pos_x < 11 && pos_y >= 6 && pos_y < 9) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+
+    ////////////////////////
+
+    // if (pos_x >= 2 && pos_x < 6 && pos_y >= 2 && pos_y < 5) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 6 && pos_x < 10 && pos_y >= 4 && pos_y < 7) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+
+    ///////////////////////
+
+    // if (pos_x >= 6 && pos_x < 26 && pos_y >= 4 && pos_y < 7) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 7 && pos_x < 12 && pos_y >= 10 && pos_y < 26) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+
+    ///////////////////////
+
+    // if (pos_x >= 3 && pos_x < 11 && pos_y >= 25 && pos_y < 37) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    //
+    // if (pos_x >= 19 && pos_x < 27 && pos_y >= 2 && pos_y < 19) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 19 && pos_x < 27 && pos_y >= 43 && pos_y < 60) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    //
+    // if (pos_x >= 5 && pos_x < 12 && pos_y >= 19 && pos_y < 29) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 7 && pos_x < 13 && pos_y >= 17 && pos_y < 26) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 9 && pos_x < 15 && pos_y >= 15 && pos_y < 23) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 11 && pos_x < 16 && pos_y >= 13 && pos_y < 22) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 15 && pos_x < 18 && pos_y >= 11 && pos_y < 21) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 18 && pos_x < 21 && pos_y >= 11 && pos_y < 20) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    //
+    // if (pos_x >= 5 && pos_x < 12 && pos_y >= 33 && pos_y < 43) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 7 && pos_x < 13 && pos_y >= 36 && pos_y < 45) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 9 && pos_x < 15 && pos_y >= 39 && pos_y < 47) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 11 && pos_x < 16 && pos_y >= 40 && pos_y < 49) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 15 && pos_x < 18 && pos_y >= 41 && pos_y < 51) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
+    // if (pos_x >= 18 && pos_x < 21 && pos_y >= 42 && pos_y < 51) {
+    //   icell->mutableItemBase().addFlags(ItemFlags::II_Refine);
+    // }
   }
+
   //
   // Integer nb_cell_x = numbering.globalNbCellsX(1);
   //
@@ -888,7 +910,7 @@ markCellsToRefine(Integer max_level)
   Real ref = 0.05;
   bool is_edit = false;
 
-  for (Integer i = 0; i <= max_level; ++i) {
+  for (Integer i = max_level; i <= max_level; ++i) {
     Real ref_level = 1 + ref * pow(10, i);
     info() << "ref_level : " << ref_level;
     ENUMERATE_ (Cell, icell, mesh()->allLevelCells(i)) {

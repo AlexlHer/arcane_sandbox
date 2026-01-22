@@ -47,8 +47,8 @@
         dim="0"
     />
     <variable
-        field-name="overall"
-        name="Overall"
+        field-name="overlap"
+        name="Overlap"
         data-type="integer"
         item-kind="cell"
         dim="0"

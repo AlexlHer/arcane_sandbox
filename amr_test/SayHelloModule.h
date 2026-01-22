@@ -12,25 +12,27 @@ using namespace Arcane;
 class SayHelloModule
 : public ArcaneSayHelloObject
 {
-public:
+ public:
 
   explicit SayHelloModule(const ModuleBuildInfo& mbi)
-    : ArcaneSayHelloObject(mbi)
+  : ArcaneSayHelloObject(mbi)
   {
   }
 
-public:
+ public:
 
   void startInit() override;
   void compute() override;
   void endModule() override;
   VersionInfo versionInfo() const override { return VersionInfo(1, 0, 0); }
 
-private:
+ private:
 
-  Real3 m_center;
-  Real m_radius;
-  ICartesianMesh* m_cartesian_mesh;
+  Real3 m_center{};
+  Real m_radius = 0;
+  Real m_radius_large_circle = 0;
+  bool m_change_radius = true;
+  ICartesianMesh* m_cartesian_mesh = nullptr;
 };
 
 #endif
