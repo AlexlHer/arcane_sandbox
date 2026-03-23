@@ -63,17 +63,18 @@ compute()
   Int64 node_uid = 0;
 
   Real3 p0{ 1.5, 0, 0 };
-  Real3 n{ 1, 0, 0 };
+  Real3 normal{ 1, 0.1, 0 };
 
   VariableNodeReal3& node_coord = mesh()->nodesCoordinates();
   VariableNodeReal node_dist(VariableBuildInfo(mesh(), "NodeDist"));
 
   ENUMERATE_ (Node, inode, allNodes()) {
-    node_dist[inode] = math::dot({ node_coord[inode] - p0 }, n);
+    node_dist[inode] = math::dot({ node_coord[inode] - p0 }, normal);
   }
 
   std::map<Pair, Int64> mapp;
   std::map<Int64, Real3> mapp2;
+  std::map<Real3, Int64> mapp3;
 
   UniqueArray<Int64> cells_infos;
   cells_infos.reserve(10000);
@@ -101,6 +102,7 @@ compute()
         if (!mapp.contains({ node0.uniqueId(), node1.uniqueId() })) {
           mapp[{ node0.uniqueId(), node1.uniqueId() }] = node_uid;
           mapp2[node_uid] = p;
+          mapp3[p] = node_uid;
           node_uid++;
         }
         tmp2.add(mapp[{ node0.uniqueId(), node1.uniqueId() }]);
@@ -111,16 +113,60 @@ compute()
     if (!tmp.empty()) {
       info() << "CellUID : " << icell->uniqueId() << " -- Tmp : " << tmp;
       info() << "CellUID : " << icell->uniqueId() << " -- Tmp2 : " << tmp2;
-      cells_infos.add(ITI_Quad4);
-      cells_infos.add(icell->uniqueId());
-      cells_infos.add(tmp2[0]);
-      cells_infos.add(tmp2[1]);
-      cells_infos.add(tmp2[3]);
-      cells_infos.add(tmp2[2]);
+      // if (tmp.size() == 3)
+      //   cells_infos.add(ITI_Cell3D_Triangle3);
+      // else if (tmp.size() == 4)
+      //   cells_infos.add(ITI_Cell3D_Quad4);
+      // else
+      //   ARCANE_FATAL("Pas implem");
+      if (tmp.size() == 3)
+        cells_infos.add(ITI_Triangle3);
+      else if (tmp.size() == 4)
+        cells_infos.add(ITI_Quad4);
+      else if (tmp.size() == 5)
+        cells_infos.add(ITI_Pentagon5);
+      else if (tmp.size() == 6)
+        cells_infos.add(ITI_Hexagon6);
+      else
+        ARCANE_FATAL("Pas implem");
 
-      // for (Integer i = 0; i < tmp.size(); ++i) {
-      //   cells_infos.add(tmp2[i]);
-      // }
+      cells_infos.add(icell->uniqueId());
+
+      {
+        Real3 bary{ 0 };
+        for (const Real3& node : tmp) {
+          bary += node;
+        }
+        bary /= tmp.size();
+
+        Real3 arbitrary = (std::abs(normal.x) > 0.9) ? Real3{ 0.0, 1.0, 0.0 } : Real3{ 1.0, 0.0, 0.0 };
+        Real3 u = math::normalizedCrossProduct3(arbitrary, normal);
+        Real3 v = math::normalizedCrossProduct3(normal, u);
+
+        std::sort(tmp.begin(), tmp.end(),
+                  [&](const Real3& a, const Real3& b) {
+                    // Vecteurs allant du centre vers les points.
+                    Real3 va{ a - bary };
+                    Real3 vb{ b - bary };
+
+                    // Projections 2D : (x, y) = (V.u, V.v).
+                    Real a_x = math::dot(va, u);
+                    Real a_y = math::dot(va, v);
+
+                    Real b_x = math::dot(vb, u);
+                    Real b_y = math::dot(vb, v);
+
+                    // Calcul des angles.
+                    Real angle_a = std::atan2(a_y, a_x);
+                    Real angle_b = std::atan2(b_y, b_x);
+
+                    return angle_a < angle_b;
+                  });
+        info() << "CellUID : " << icell->uniqueId() << " -- SortTmp : " << tmp;
+        for (const Real3& node : tmp) {
+          cells_infos.add(mapp3[node]);
+        }
+      }
       nb_cell++;
     }
     tmp.clear();
@@ -134,6 +180,7 @@ compute()
   mbi.addParallelMng(makeRef(pm));
   primary_cloned_mesh = mm->meshFactoryMng()->createMesh(mbi);
   primary_cloned_mesh->modifier()->setDynamic(true);
+  // primary_cloned_mesh->setDimension(3);
   primary_cloned_mesh->setDimension(2);
   primary_cloned_mesh->endAllocate();
   primary_cloned_mesh->modifier()->addCells(nb_cell, cells_infos);
@@ -148,24 +195,46 @@ compute()
 
   /////////////////////
 
-  ServiceBuilder<IPostProcessorWriter> spp(primary_cloned_mesh->handle());
-  Ref<IPostProcessorWriter> pp = spp.createReference("VtkHdfV2PostProcessor");
-  Directory output_directory = Directory(subDomain()->exportDirectory(), "amrtestpost1");
-  pp->setBaseDirectoryName( output_directory.path());
-  IPostProcessorWriter* post_processor = pp.get();
   times.add(m_global_time());
-  post_processor->setTimes(times);
+  {
+    ServiceBuilder<IPostProcessorWriter> spp(primary_cloned_mesh->handle());
+    Ref<IPostProcessorWriter> pp = spp.createReference("VtkHdfV2PostProcessor");
+    Directory output_directory = Directory(subDomain()->exportDirectory(), "amrtestpost1");
+    pp->setBaseDirectoryName(output_directory.path());
+    IPostProcessorWriter* post_processor = pp.get();
+    post_processor->setTimes(times);
 
-  VariableList variables;
-  variables.add(primary_cloned_mesh->nodesCoordinates().variable());
-  post_processor->setVariables(variables);
+    VariableList variables;
+    variables.add(primary_cloned_mesh->nodesCoordinates().variable());
+    post_processor->setVariables(variables);
 
-  ItemGroupList groups;
-  groups.add(primary_cloned_mesh->allNodes());
-  post_processor->setGroups(groups);
+    ItemGroupList groups;
+    groups.add(primary_cloned_mesh->allNodes());
+    post_processor->setGroups(groups);
 
-  IVariableMng* vm = primary_cloned_mesh->variableMng();
-  vm->writePostProcessing(post_processor);
+    IVariableMng* vm = primary_cloned_mesh->variableMng();
+    vm->writePostProcessing(post_processor);
+  }
+
+  {
+    ServiceBuilder<IPostProcessorWriter> spp(mesh()->handle());
+    Ref<IPostProcessorWriter> pp = spp.createReference("VtkHdfV2PostProcessor");
+    Directory output_directory = Directory(subDomain()->exportDirectory(), "amrtestpost1");
+    pp->setBaseDirectoryName(output_directory.path());
+    IPostProcessorWriter* post_processor = pp.get();
+    post_processor->setTimes(times);
+
+    VariableList variables;
+    variables.add(mesh()->nodesCoordinates().variable());
+    post_processor->setVariables(variables);
+
+    ItemGroupList groups;
+    groups.add(mesh()->allNodes());
+    post_processor->setGroups(groups);
+
+    IVariableMng* vm = mesh()->variableMng();
+    vm->writePostProcessing(post_processor);
+  }
 
   subDomain()->timeLoopMng()->stopComputeLoop(true);
 }
