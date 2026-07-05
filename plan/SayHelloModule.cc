@@ -13,6 +13,10 @@
 #include <arcane/core/IPrimaryMesh.h>
 #include <arcane/core/IMeshModifier.h>
 #include <arcane/core/ServiceBuilder.h>
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
 using namespace Arcane;
 
 /*---------------------------------------------------------------------------*/
@@ -28,43 +32,42 @@ startInit()
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-struct EdgeLite
+struct NodeIntersection
 {
-  EdgeLite(const Node aa, const Node bb, const Real3& inter)
-  : m_inter(inter)
+  NodeIntersection(const Node aa, const Node bb, const Real3& inter)
+  : m_intersection_pos(inter)
   {
     const Int32 a = aa.localId();
     const Int32 b = bb.localId();
     if (a < b) {
-      m_a = a;
-      m_b = b;
+      m_lid_node0 = a;
+      m_lid_node1 = b;
     }
     else {
-      m_a = b;
-      m_b = a;
+      m_lid_node0 = b;
+      m_lid_node1 = a;
     }
   }
 
-  EdgeLite() = default;
+  NodeIntersection() = default;
 
-  bool operator<(const EdgeLite& other) const
+  bool operator<(const NodeIntersection& other) const
   {
-    if (m_a != other.m_a) {
-      return m_a < other.m_a;
+    if (m_lid_node0 != other.m_lid_node0) {
+      return m_lid_node0 < other.m_lid_node0;
     }
-    return m_b < other.m_b;
+    return m_lid_node1 < other.m_lid_node1;
   }
 
-  bool operator==(const EdgeLite& other) const
+  bool operator==(const NodeIntersection& other) const
   {
-    return m_a == other.m_a && m_b == other.m_b;
+    return m_lid_node0 == other.m_lid_node0 && m_lid_node1 == other.m_lid_node1;
   }
 
-  Int32 m_a = -1;
-  Int32 m_b = -1;
-  Real3 m_inter{ -1 };
-  Int64 m_uid = -1;
-  Int32 d_log = -1;
+  Int32 m_lid_node0 = -1;
+  Int32 m_lid_node1 = -1;
+  Real3 m_intersection_pos{ -1 };
+  Int64 m_uid_new_node = -1;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -76,7 +79,7 @@ compute()
   info() << "Module SayHello COMPUTE";
 
   // Paramètres du plan : point appartenant au plan et vecteur normal.
-  Real3 p0{ 1.6, 0, 0 };
+  constexpr Real3 p0{ 1.6, 0, 0 };
   Real3 normal{ 1, 0.5, 0.1 };
 
   // Normalise le vecteur normal pour garantir un calcul correct des distances.
@@ -90,73 +93,65 @@ compute()
     node_dist[inode] = math::dot({ node_coord[inode] - p0 }, normal);
   }
 
-  UniqueArray<Real3> point_coords;
-  UniqueArray<EdgeLite> point_coords11;
+  UniqueArray<NodeIntersection> point_coords;
 
   UniqueArray<Int64> cells_infos;
   cells_infos.reserve(10000);
 
   Int32 nb_cell = 0;
-  UniqueArray<EdgeLite> tmp11;
+  UniqueArray<NodeIntersection> point_coords_tmp;
 
   ENUMERATE_ (Cell, icell, allCells()) {
     ItemWithNodes item = *icell;
 
-    // Faut-il continuer ?
-    bool cont = true;
-    // Si au moins un noeud est sur le plan, peut-être que la face est colinéaire.
-    bool has_egal = false;
+    // On regarde si la maille traverse le plan ou si une de ces faces est collé dessus.
     {
-      // On vérifie que la maille est dans le plan.
-      bool has_neg = false, has_pos = false;
-      ENUMERATE_ (Node, inode, item.nodes()) {
-        Real d = node_dist[inode];
-        if (d < 0)
-          has_neg = true;
-        else if (d > 0)
-          has_pos = true;
-        else
-          has_egal = true;
-      }
-      if (!(has_neg && has_pos))
-        cont = false;
-    }
-    if (!cont && has_egal) {
-      ENUMERATE_ (Face, iface, icell->faces()) {
-        has_egal = true;
-        ENUMERATE_ (Node, inode, iface->nodes()) {
+      bool cont = true;
+
+      // Si au moins un noeud est sur le plan, peut-être que la face est colinéaire.
+      bool has_egal = false;
+      {
+        // On vérifie que la maille est dans le plan.
+        bool has_neg = false, has_pos = false;
+        ENUMERATE_ (Node, inode, item.nodes()) {
           Real d = node_dist[inode];
-          if (d != 0) {
-            has_egal = false;
+          if (d < 0)
+            has_neg = true;
+          else if (d > 0)
+            has_pos = true;
+          else
+            has_egal = true;
+        }
+        if (!(has_neg && has_pos))
+          cont = false;
+      }
+      // On vérifie si une des faces est sur le plan.
+      if (!cont && has_egal) {
+        ENUMERATE_ (Face, iface, icell->faces()) {
+          has_egal = true;
+          ENUMERATE_ (Node, inode, iface->nodes()) {
+            Real d = node_dist[inode];
+            if (d != 0) {
+              has_egal = false;
+              break;
+            }
+          }
+          if (has_egal) {
+            item = *iface;
+            cont = true;
             break;
           }
         }
-        if (has_egal) {
-          item = *iface;
-          cont = true;
-          break;
-        }
       }
-    }
-    if (!cont) {
-      continue;
+      if (!cont) {
+        continue;
+      }
     }
 
     // Tableaux définissant les arêtes pour chaque type d'élément.
     // hexa_edge: 12 arêtes pour un hexaédre (8 noeuds), chaque arête = [n0, n1] indices locaux.
     static constexpr Integer hexa_edge[12][2] = {
-      { 0, 1 },
-      { 1, 2 },
-      { 2, 3 },
-      { 3, 0 },
-      { 0, 4 },
-      { 1, 5 },
-      { 2, 6 },
-      { 3, 7 },
-      { 4, 5 },
-      { 5, 6 },
-      { 6, 7 },
-      { 7, 4 }
+      { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }, { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 }
     };
     // tetra_edge: 6 arêtes pour un tétraèdre (4 noeuds).
     static constexpr Integer tetra_edge[6][2] = {
@@ -201,43 +196,32 @@ compute()
       Node node0 = item.node(edge_def[i][0]);
       Node node1 = item.node(edge_def[i][1]);
 
-      info() << "N0 : " << node0.localId() << " -- D = " << std::abs(node_dist[node0]);
-      info() << "N1 : " << node0.localId() << " -- D = " << std::abs(node_dist[node1]);
-
+      // Si le noeud 0 est sur le plan.
       if (math::isNearlyZero(node_dist[node0])) {
-        info() << "AAA";
-        for (Integer j = 0; j < 2; ++j) {
-          Node n = node0;
-          Real3 p = node_coord[n];
+        const Real3 p = node_coord[node0];
 
-          auto aaaa = EdgeLite{ n, n, p };
-          aaaa.d_log = 0;
+        auto ni = NodeIntersection{ node0, node0, p };
 
-          if (!tmp11.contains(aaaa)) {
-            tmp11.add(aaaa);
-          }
+        if (!point_coords_tmp.contains(ni)) {
+          point_coords_tmp.add(ni);
         }
         continue;
       }
+
+      // Si le noeud 1 est sur le plan.
       if (math::isNearlyZero(node_dist[node1])) {
-        info() << "BBB";
-        for (Integer j = 0; j < 2; ++j) {
-          Node n = node1;
-          Real3 p = node_coord[n];
+        const Real3 p = node_coord[node1];
 
-          auto aaaa = EdgeLite{ n, n, p };
-          aaaa.d_log = 1;
+        auto ni = NodeIntersection{ node1, node1, p };
 
-          if (!tmp11.contains(aaaa)) {
-            tmp11.add(aaaa);
-          }
+        if (!point_coords_tmp.contains(ni)) {
+          point_coords_tmp.add(ni);
         }
         continue;
       }
 
       // Si l'arrête passe à travers le plan.
       if (node_dist[node0] * node_dist[node1] < 0) {
-        info() << "CCC";
 
         // Paramètre d'interpolation t dans [0,1] pour le point d'intersection
         // le long de l'arête de node0 à node1.
@@ -249,108 +233,102 @@ compute()
         p.y = node_coord[node0].y + t * (node_coord[node1].y - node_coord[node0].y);
         p.z = node_coord[node0].z + t * (node_coord[node1].z - node_coord[node0].z);
 
-        auto aaaa = EdgeLite{ node0, node1, p };
-        aaaa.d_log = 2;
+        auto ni = NodeIntersection{ node0, node1, p };
 
-        if (!tmp11.contains(aaaa)) {
-          tmp11.add(aaaa);
+        if (!point_coords_tmp.contains(ni)) {
+          point_coords_tmp.add(ni);
         }
-        continue;
       }
-      info() << "DDD";
     }
 
-    if (tmp11.size() >= 3) {
-      // Mappe les indices locaux vers des indices globaux dans point_coords.
+    if (point_coords_tmp.size() >= 3) {
+      // On ajoute le uniqueId du nouveau noeud. Si ce noeud a déjà été créé, on récupère son uniqueId.
       {
-        for (auto& edge : tmp11) {
-          auto aaa = point_coords11.span().findFirst(edge);
-          if (aaa) {
-            edge.m_uid = point_coords11[aaa.value()].m_uid;
+        for (auto& new_node : point_coords_tmp) {
+          auto pos = point_coords.span().findFirst(new_node);
+          if (pos) {
+            new_node.m_uid_new_node = point_coords[pos.value()].m_uid_new_node;
           }
           else {
-            edge.m_uid = point_coords11.size();
-            point_coords11.add(edge);
+            new_node.m_uid_new_node = point_coords.size();
+            point_coords.add(new_node);
           }
         }
       }
 
-      if (tmp11.size() == 3)
+      if (point_coords_tmp.size() == 3)
         cells_infos.add(ITI_Triangle3);
-      else if (tmp11.size() == 4)
+      else if (point_coords_tmp.size() == 4)
         cells_infos.add(ITI_Quad4);
-      else if (tmp11.size() == 5)
+      else if (point_coords_tmp.size() == 5)
         cells_infos.add(ITI_Pentagon5);
-      else if (tmp11.size() == 6)
+      else if (point_coords_tmp.size() == 6)
         cells_infos.add(ITI_Hexagon6);
       else
-        ARCANE_FATAL("Pas implem : {0}", tmp11.size());
+        ARCANE_FATAL("Pas implem : {0}", point_coords_tmp.size());
 
       cells_infos.add(item.uniqueId());
 
       {
         // Calcul du barycentre de tous les points d'intersection.
         Real3 bary{ 0 };
-        for (const auto& node : tmp11) {
-          bary += node.m_inter;
+        for (const auto& node : point_coords_tmp) {
+          bary += node.m_intersection_pos;
         }
-        bary /= tmp11.size();
+        bary /= point_coords_tmp.size();
 
         // On choisit un vecteur de référence arbitraire non parallèle au normal.
         // Si normal.x est grand (proche de l'axe X), utiliser l'axe Y ; sinon utiliser l'axe X.
-        Real3 arbitrary = (std::abs(normal.x) > 0.9) ? Real3{ 0.0, 1.0, 0.0 } : Real3{ 1.0, 0.0, 0.0 };
+        const Real3 arbitrary = (std::abs(normal.x) > 0.9) ? Real3{ 0.0, 1.0, 0.0 } : Real3{ 1.0, 0.0, 0.0 };
         // u et v forment une base orthonormale du plan de coupe.
         // Ils sont perpendiculaires au normal et l'un à l'autre.
-        Real3 u = math::normalizedCrossProduct3(arbitrary, normal);
-        Real3 v = math::normalizedCrossProduct3(normal, u);
+        const Real3 u = math::normalizedCrossProduct3(arbitrary, normal);
+        const Real3 v = math::normalizedCrossProduct3(normal, u);
 
         // On trie les points d'intersection par angle polaire autour du barycentre.
         // Cela garantit que le polygone résultant est correctement ordonné (sens inverse des aiguilles d'une montre).
         UniqueArray<Int64> indices;
-        indices.reserve(tmp11.size());
-        for (Int64 i = 0; i < tmp11.size(); ++i) {
+        indices.reserve(point_coords_tmp.size());
+        for (Int64 i = 0; i < point_coords_tmp.size(); ++i) {
           indices.add(i);
         }
 
         std::sort(indices.begin(), indices.end(),
                   [&](Int64 ia, Int64 ib) {
-                    const Real3& pa = tmp11[ia].m_inter;
-                    const Real3& pb = tmp11[ib].m_inter;
+                    const Real3& pa = point_coords_tmp[ia].m_intersection_pos;
+                    const Real3& pb = point_coords_tmp[ib].m_intersection_pos;
 
                     // Vecteurs allant du barycentre vers chaque point.
-                    Real3 va{ pa - bary };
-                    Real3 vb{ pb - bary };
+                    const Real3 va{ pa - bary };
+                    const Real3 vb{ pb - bary };
 
                     // Projeter sur la base 2D du plan (u, v).
-                    Real a_x = math::dot(va, u);
-                    Real a_y = math::dot(va, v);
+                    const Real a_x = math::dot(va, u);
+                    const Real a_y = math::dot(va, v);
 
-                    Real b_x = math::dot(vb, u);
-                    Real b_y = math::dot(vb, v);
+                    const Real b_x = math::dot(vb, u);
+                    const Real b_y = math::dot(vb, v);
 
                     // Comparer les angles en utilisant atan2.
-                    Real angle_a = std::atan2(a_y, a_x);
-                    Real angle_b = std::atan2(b_y, b_x);
+                    const Real angle_a = std::atan2(a_y, a_x);
+                    const Real angle_b = std::atan2(b_y, b_x);
 
                     return angle_a < angle_b;
                   });
 
         for (Int64 idx : indices) {
-          ARCANE_FATAL_IF(tmp11[idx].m_uid == -1, "aaa {0}", tmp11[idx].m_uid);
-          cells_infos.add(tmp11[idx].m_uid);
+          ARCANE_FATAL_IF(point_coords_tmp[idx].m_uid_new_node == -1, "aaa {0}", point_coords_tmp[idx].m_uid_new_node);
+          cells_infos.add(point_coords_tmp[idx].m_uid_new_node);
         }
       }
       nb_cell++;
     }
-    for (auto elem : tmp11) {
-      info() << "1UID : " << elem.m_uid << "\t -- Node0 : " << elem.m_a << "\t -- Node1 : " << elem.m_b << "\t -- Log : " << elem.d_log << "\t -- Pos : " << elem.m_inter;
-    }
-    tmp11.clear();
+    point_coords_tmp.clear();
   }
 
-  for (auto elem : point_coords11) {
-    info() << "UID : " << elem.m_uid << "\t -- Node0 : " << elem.m_a << "\t -- Node1 : " << elem.m_b << "\t -- Log : " << elem.d_log << "\t -- Pos : " << elem.m_inter;
-  }
+  // for (auto elem : point_coords) {
+  //   info() << "UID : " << elem.m_uid_new_node << "\t -- Node0 : " << elem.m_lid_node0 << "\t -- Node1 : " << elem.m_lid_node1 << "\t -- Pos : " << elem.m_intersection_pos;
+  // }
 
   // On crée un nouveau maillage 2D pour stocker la section transversale extraite.
   IPrimaryMesh* primary_cloned_mesh;
@@ -367,11 +345,11 @@ compute()
 
   {
     VariableNodeReal3& node_coords(primary_cloned_mesh->nodesCoordinates());
-    info() << "Setting " << primary_cloned_mesh->nbNode() << " node coordinates";
+    //info() << "Setting " << primary_cloned_mesh->nbNode() << " node coordinates";
     Int64 node_count = 0;
     ENUMERATE_ (Node, inode, primary_cloned_mesh->allNodes()) {
-      node_coords[inode] = point_coords11[node_count].m_inter;
-      info() << "Node " << node_count << " uid=" << inode->uniqueId() << " coord=" << node_coords[inode];
+      node_coords[inode] = point_coords[node_count].m_intersection_pos;
+      //info() << "Node " << node_count << " uid=" << inode->uniqueId() << " coord=" << node_coords[inode];
       node_count++;
     }
   }
@@ -423,6 +401,9 @@ compute()
 
   subDomain()->timeLoopMng()->stopComputeLoop(true);
 }
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
 
 void SayHelloModule::
 endModule()
